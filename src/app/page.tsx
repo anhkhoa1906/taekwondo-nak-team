@@ -1,11 +1,29 @@
+"use client";
+
 import { Users, UserCheck, Clock, Trophy } from "lucide-react";
 
 import Header from "@/components/dashboard/header";
 import StatCard from "@/components/dashboard/stat-card";
 import StudentChart from "@/components/dashboard/student-chart";
 import BeltChart from "@/components/dashboard/belt-chart";
+import { useStudents } from "@/context/student-context";
+import { useCoaches } from "@/context/coach-context";
+import { useTuition } from "@/context/tuition-context";
 
 export default function Home() {
+  const { students } = useStudents();
+  const { coaches } = useCoaches();
+  const { getAllTuition } = useTuition();
+
+  const activeStudents = students.filter(
+    (student) => student.status === "Đang tập",
+  );
+
+  const currentMonth = new Date().toISOString().slice(0, 7);
+
+  const overdueTuition = getAllTuition(currentMonth).filter(
+    (item) => item.status === "Quá hạn",
+  );
   return (
     <div className="flex min-h-screen bg-slate-100">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -27,29 +45,28 @@ export default function Home() {
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             <StatCard
               title="Tổng học viên"
-              value="128"
+              value={students.length.toString()}
               description="↑ 12% so với tháng trước"
               icon={Users}
             />
 
             <StatCard
               title="Đang tập luyện"
-              value="112"
+              value={activeStudents.length.toString()}
               description="↑ 8% so với tháng trước"
               icon={UserCheck}
             />
 
             <StatCard
               title="Hết hạn học phí"
-              value="16"
-              description="↑ 2% so với tháng trước"
+              value={overdueTuition.length.toString()}
+              description="Học phí quá hạn trong tháng này"
               icon={Clock}
             />
-
             <StatCard
               title="Huấn luyện viên"
-              value="8"
-              description="Không đổi so với tháng trước"
+              value={coaches.length.toString()}
+              description="Tổng số huấn luyện viên"
               icon={Trophy}
             />
           </div>
