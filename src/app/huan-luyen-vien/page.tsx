@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Eye, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
 
 import { useCoaches, type Coach } from "@/context/coach-context";
-import { useStudents } from "@/context/student-context";
+import { useClasses } from "@/context/class-context";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,7 +43,7 @@ const emptyCoach = {
 export default function HuanLuyenVienPage() {
   const { coaches, addCoach, updateCoach, deleteCoach } = useCoaches();
 
-  const { students } = useStudents();
+  const { classes } = useClasses();
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -145,19 +145,7 @@ export default function HuanLuyenVienPage() {
   }
 
   function getCoachClasses(coachName: string) {
-    const classNames = Array.from(
-      new Set(
-        students
-          .filter((student) => {
-            // ClassItem hiện tại chưa nằm trong StudentContext,
-            // nên phần này sẽ được nối với ClassContext sau.
-            return false;
-          })
-          .map((student) => student.className),
-      ),
-    );
-
-    return classNames;
+    return classes.filter((classItem) => classItem.coach === coachName);
   }
 
   return (
@@ -604,6 +592,52 @@ export default function HuanLuyenVienPage() {
                 <p className="mt-1 text-sm">
                   {selectedCoach.note || "Không có"}
                 </p>
+              </div>
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Lớp đang phụ trách</p>
+
+                    <p className="text-xs text-slate-500">
+                      {getCoachClasses(selectedCoach.name).length} lớp
+                    </p>
+                  </div>
+                </div>
+
+                {getCoachClasses(selectedCoach.name).length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-4 text-center text-sm text-slate-500">
+                    HLV chưa phụ trách lớp nào.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {getCoachClasses(selectedCoach.name).map((classItem) => (
+                      <div
+                        key={classItem.id}
+                        className="rounded-lg border bg-slate-50 p-3"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{classItem.name}</p>
+
+                            <p className="text-xs text-slate-500">
+                              {classItem.schedule} · {classItem.time}
+                            </p>
+                          </div>
+
+                          <Badge
+                            variant={
+                              classItem.status === "Đang hoạt động"
+                                ? "default"
+                                : "secondary"
+                            }
+                          >
+                            {classItem.status}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

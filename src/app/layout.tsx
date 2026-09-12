@@ -7,6 +7,12 @@ import { AttendanceProvider } from "@/context/attendance-context";
 import { TuitionProvider } from "@/context/tuition-context";
 import { BeltProvider } from "@/context/belt-context";
 import { CoachProvider } from "@/context/coach-context";
+import { ClassProvider } from "@/context/class-context";
+import { SettingsProvider } from "@/context/settings-context";
+import { AuthProvider } from "@/context/auth-context";
+import AuthGuard from "@/components/auth/auth-guard";
+import AppShell from "@/components/layout/app-shell";
+import { ClubProvider } from "@/context/club-context";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,20 +35,28 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="vi"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full">
-        <StudentProvider>
-          <AttendanceProvider>
-            <TuitionProvider>
-              <BeltProvider>
-                <CoachProvider>
-                  <Sidebar />
-
-                  <main className="min-h-screen pl-20">{children}</main>
-                </CoachProvider>
-              </BeltProvider>
-            </TuitionProvider>
-          </AttendanceProvider>
-        </StudentProvider>
+      <body>
+        <AuthProvider>
+          <AuthGuard>
+            <ClubProvider>
+              <SettingsProvider>
+                <StudentProvider>
+                  <AttendanceProvider>
+                    <TuitionProvider>
+                      <BeltProvider>
+                        <CoachProvider>
+                          <ClassProvider>
+                            <AppShell>{children}</AppShell>
+                          </ClassProvider>
+                        </CoachProvider>
+                      </BeltProvider>
+                    </TuitionProvider>
+                  </AttendanceProvider>
+                </StudentProvider>
+              </SettingsProvider>
+            </ClubProvider>
+          </AuthGuard>
+        </AuthProvider>
       </body>
     </html>
   );

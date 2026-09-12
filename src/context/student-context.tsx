@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import { createClient } from "@/lib/supabase/client";
+import { useClub } from "@/context/club-context";
 
 export type Student = {
   id: number;
@@ -18,136 +26,209 @@ export type Student = {
 
 type StudentContextType = {
   students: Student[];
-  addStudent: (student: Student) => void;
-  updateStudent: (student: Student) => void;
-  deleteStudent: (id: number) => void;
+  addStudent: (student: Student) => Promise<void>;
+  updateStudent: (student: Student) => Promise<void>;
+  deleteStudent: (id: number) => Promise<void>;
 };
 
-const initialStudents: Student[] = [
-  {
-    id: 1,
-    name: "Nguyễn Văn An",
-    phone: "0901 234 567",
-    birthDate: "12/05/2010",
-    gender: "Nam",
-    className: "Lớp A",
-    belt: "Vàng",
-    status: "Đang tập",
-    address: "Tân Hiệp",
-    joinDate: "10/01/2025",
-    note: "",
-  },
-  {
-    id: 2,
-    name: "Trần Thị Bảo Ngọc",
-    phone: "0902 345 678",
-    birthDate: "03/08/2011",
-    gender: "Nữ",
-    className: "Lớp B",
-    belt: "Xanh",
-    status: "Đang tập",
-    address: "Long Phước",
-    joinDate: "15/02/2025",
-    note: "",
-  },
-  {
-    id: 3,
-    name: "Lê Minh Khang",
-    phone: "0903 456 789",
-    birthDate: "21/11/2009",
-    gender: "Nam",
-    className: "Lớp A",
-    belt: "Đỏ",
-    status: "Hết hạn",
-    address: "Phước Thái",
-    joinDate: "20/03/2024",
-    note: "Cần gia hạn học phí",
-  },
-  {
-    id: 4,
-    name: "Phạm Gia Hân",
-    phone: "0904 567 890",
-    birthDate: "17/03/2012",
-    gender: "Nữ",
-    className: "Lớp C",
-    belt: "Trắng",
-    status: "Đang tập",
-    address: "Tân Thành",
-    joinDate: "01/06/2025",
-    note: "",
-  },
-  {
-    id: 5,
-    name: "Hoàng Anh Tuấn",
-    phone: "0905 678 901",
-    birthDate: "28/07/2010",
-    gender: "Nam",
-    className: "Lớp B",
-    belt: "Xanh",
-    status: "Đang tập",
-    address: "Long Phước",
-    joinDate: "05/04/2025",
-    note: "",
-  },
-  {
-    id: 6,
-    name: "Đỗ Thị Mai",
-    phone: "0906 789 012",
-    birthDate: "14/01/2011",
-    gender: "Nữ",
-    className: "Lớp A",
-    belt: "Vàng",
-    status: "Hết hạn",
-    address: "Tân Hiệp",
-    joinDate: "12/02/2025",
-    note: "",
-  },
-  {
-    id: 7,
-    name: "Nguyễn Gia Bảo",
-    phone: "0907 890 123",
-    birthDate: "09/09/2009",
-    gender: "Nam",
-    className: "Lớp C",
-    belt: "Đen",
-    status: "Đang tập",
-    address: "Phước Thái",
-    joinDate: "10/01/2024",
-    note: "",
-  },
-  {
-    id: 8,
-    name: "Vũ Ngọc Trâm",
-    phone: "0908 901 234",
-    birthDate: "25/04/2011",
-    gender: "Nữ",
-    className: "Lớp B",
-    belt: "Đỏ",
-    status: "Đang tập",
-    address: "Tân Thành",
-    joinDate: "18/05/2025",
-    note: "",
-  },
-];
+type StudentRow = {
+  id: number;
+  club_id: string;
+  name: string;
+  phone: string | null;
+  birth_date: string | null;
+  gender: string | null;
+  class_name: string | null;
+  belt: string | null;
+  status: string | null;
+  address: string | null;
+  join_date: string | null;
+  note: string | null;
+};
 
 const StudentContext = createContext<StudentContextType | undefined>(undefined);
 
+function formatDateForDisplay(date: string | null) {
+  if (!date) return "";
+
+  const [year, month, day] = date.split("-");
+
+  if (!year || !month || !day) {
+    return date;
+  }
+
+  return `${day}/${month}/${year}`;
+}
+
+function formatDateForDatabase(date: string) {
+  if (!date) return null;
+
+  // DD/MM/YYYY -> YYYY-MM-DD
+  const parts = date.split("/");
+
+  if (parts.length === 3) {
+    const [day, month, year] = parts;
+
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  // YYYY-MM-DD
+  return date;
+}
+
+function mapStudent(row: StudentRow): Student {
+  return {
+    id: row.id,
+    name: row.name,
+    phone: row.phone ?? "",
+    birthDate: formatDateForDisplay(row.birth_date),
+    gender: row.gender ?? "",
+    className: row.class_name ?? "",
+    belt: row.belt ?? "",
+    status: row.status ?? "",
+    address: row.address ?? "",
+    joinDate: formatDateForDisplay(row.join_date),
+    note: row.note ?? "",
+  };
+}
+
 export function StudentProvider({ children }: { children: React.ReactNode }) {
-  const [students, setStudents] = useState<Student[]>(initialStudents);
+  const { club, loading: clubLoading } = useClub();
 
-  function addStudent(student: Student) {
-    setStudents((prev) => [student, ...prev]);
-  }
+  const [students, setStudents] = useState<Student[]>([]);
 
-  function updateStudent(student: Student) {
-    setStudents((prev) =>
-      prev.map((item) => (item.id === student.id ? student : item)),
-    );
-  }
+  const loadStudents = useCallback(async () => {
+    if (!club?.id) {
+      setStudents([]);
+      return;
+    }
 
-  function deleteStudent(id: number) {
-    setStudents((prev) => prev.filter((item) => item.id !== id));
-  }
+    const supabase = createClient();
+
+    const { data, error } = await supabase
+      .from("students")
+      .select("*")
+      .eq("club_id", club.id)
+      .order("id", { ascending: true });
+
+    if (error) {
+      console.error("Lỗi tải danh sách học viên:", error);
+      return;
+    }
+
+    setStudents((data as StudentRow[]).map(mapStudent));
+  }, [club?.id]);
+
+  useEffect(() => {
+    if (clubLoading) return;
+
+    loadStudents();
+  }, [clubLoading, loadStudents]);
+
+  const addStudent = useCallback(
+    async (student: Student) => {
+      if (!club?.id) {
+        console.error("Không xác định được CLB hiện tại.");
+        return;
+      }
+
+      const supabase = createClient();
+
+      const { data, error } = await supabase
+        .from("students")
+        .insert({
+          club_id: club.id,
+          name: student.name,
+          phone: student.phone,
+          birth_date: formatDateForDatabase(student.birthDate),
+          gender: student.gender,
+          class_name: student.className,
+          belt: student.belt,
+          status: student.status,
+          address: student.address,
+          join_date: formatDateForDatabase(student.joinDate),
+          note: student.note,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Lỗi thêm học viên:", error);
+        return;
+      }
+
+      setStudents((prev) => [mapStudent(data as StudentRow), ...prev]);
+    },
+    [club?.id],
+  );
+
+  const updateStudent = useCallback(
+    async (student: Student) => {
+      if (!club?.id) {
+        console.error("Không xác định được CLB hiện tại.");
+        return;
+      }
+
+      const supabase = createClient();
+
+      const { data, error } = await supabase
+        .from("students")
+        .update({
+          name: student.name,
+          phone: student.phone,
+          birth_date: formatDateForDatabase(student.birthDate),
+          gender: student.gender,
+          class_name: student.className,
+          belt: student.belt,
+          status: student.status,
+          address: student.address,
+          join_date: formatDateForDatabase(student.joinDate),
+          note: student.note,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", student.id)
+        .eq("club_id", club.id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Lỗi cập nhật học viên:", error);
+        return;
+      }
+
+      setStudents((prev) =>
+        prev.map((item) =>
+          item.id === student.id ? mapStudent(data as StudentRow) : item,
+        ),
+      );
+    },
+    [club?.id],
+  );
+
+  const deleteStudent = useCallback(
+    async (id: number) => {
+      if (!club?.id) {
+        console.error("Không xác định được CLB hiện tại.");
+        return;
+      }
+
+      const supabase = createClient();
+
+      const { error } = await supabase
+        .from("students")
+        .delete()
+        .eq("id", id)
+        .eq("club_id", club.id);
+
+      if (error) {
+        console.error("Lỗi xóa học viên:", error);
+        return;
+      }
+
+      setStudents((prev) => prev.filter((item) => item.id !== id));
+    },
+    [club?.id],
+  );
 
   return (
     <StudentContext.Provider

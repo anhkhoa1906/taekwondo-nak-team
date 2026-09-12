@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useStudents } from "@/context/student-context";
+import { useClasses } from "@/context/class-context";
+import type { ClassItem } from "@/context/class-context";
+import { useCoaches } from "@/context/coach-context";
 import {
   Eye,
   Pencil,
@@ -40,16 +43,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-type ClassItem = {
-  id: number;
-  name: string;
-  coach: string;
-  schedule: string;
-  time: string;
-  status: string;
-  note: string;
-};
-
 type NewClass = {
   name: string;
   coach: string;
@@ -58,38 +51,6 @@ type NewClass = {
   status: string;
   note: string;
 };
-
-const initialClasses: ClassItem[] = [
-  {
-    id: 1,
-    name: "Lớp A",
-    coach: "...",
-    schedule: "...",
-    time: "...",
-    status: "Đang hoạt động",
-    note: "",
-  },
-  {
-    id: 2,
-    name: "Lớp B",
-    coach: "...",
-    schedule: "...",
-    time: "...",
-    status: "Đang hoạt động",
-    note: "",
-  },
-  {
-    id: 3,
-    name: "Lớp C",
-    coach: "...",
-    schedule: "...",
-    time: "...",
-    status: "Đang hoạt động",
-    note: "",
-  },
-];
-
-const coachOptions = ["Nguyễn Văn An", "Trần Minh Khoa", "Lê Hoàng Nam"];
 
 const scheduleOptions = [
   "Thứ 2 - 4 - 6",
@@ -103,7 +64,10 @@ const statusOptions = ["Đang hoạt động", "Tạm nghỉ"];
 
 export default function LopHocPage() {
   const { students, updateStudent } = useStudents();
-  const [classes, setClasses] = useState<ClassItem[]>(initialClasses);
+
+  const { classes, addClass, updateClass, deleteClass } = useClasses();
+
+  const { coaches } = useCoaches();
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -194,7 +158,7 @@ export default function LopHocPage() {
       note: newClass.note,
     };
 
-    setClasses((prev) => [...prev, newItem]);
+    addClass(newItem);
 
     resetForm();
     setOpen(false);
@@ -245,22 +209,15 @@ export default function LopHocPage() {
       return;
     }
 
-    setClasses((prev) =>
-      prev.map((item) =>
-        item.id === selectedClass.id
-          ? {
-              ...item,
-              name: newClass.name,
-              coach: newClass.coach,
-              schedule: newClass.schedule,
-              time: newClass.time,
-              status: newClass.status,
-              note: newClass.note,
-            }
-          : item,
-      ),
-    );
-
+    updateClass({
+      ...selectedClass,
+      name: newClass.name,
+      coach: newClass.coach,
+      schedule: newClass.schedule,
+      time: newClass.time,
+      status: newClass.status,
+      note: newClass.note,
+    });
     resetForm();
     setSelectedClass(null);
     setEditOpen(false);
@@ -277,7 +234,7 @@ export default function LopHocPage() {
 
     if (!confirmDelete) return;
 
-    setClasses((prev) => prev.filter((item) => item.id !== id));
+    deleteClass(id);
   }
 
   function getStudentsInClass(classItem: ClassItem) {
@@ -564,9 +521,9 @@ export default function LopHocPage() {
                 </SelectTrigger>
 
                 <SelectContent>
-                  {coachOptions.map((coach) => (
-                    <SelectItem key={coach} value={coach}>
-                      {coach}
+                  {coaches.map((coach) => (
+                    <SelectItem key={coach.id} value={coach.name}>
+                      {coach.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -930,9 +887,9 @@ export default function LopHocPage() {
                 </SelectTrigger>
 
                 <SelectContent>
-                  {coachOptions.map((coach) => (
-                    <SelectItem key={coach} value={coach}>
-                      {coach}
+                  {coaches.map((coach) => (
+                    <SelectItem key={coach.id} value={coach.name}>
+                      {coach.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

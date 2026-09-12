@@ -14,11 +14,14 @@ import {
   Settings,
   PanelLeft,
   X,
+  LogOut,
   type LucideIcon,
 } from "lucide-react";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+
+import { useAuth } from "@/context/auth-context";
 
 type MenuItem = {
   label: string;
@@ -91,6 +94,7 @@ const menuItems: {
       {
         label: "Cài đặt",
         icon: Settings,
+        href: "/cai-dat",
       },
     ],
   },
@@ -98,7 +102,25 @@ const menuItems: {
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const { user, signOut } = useAuth();
+
   const [open, setOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  async function handleSignOut() {
+    setLoggingOut(true);
+
+    await signOut();
+
+    router.push("/dang-nhap");
+    router.refresh();
+  }
+
+  const email = user?.email ?? "Chưa đăng nhập";
+
+  const initials = email.split("@")[0].slice(0, 2).toUpperCase();
 
   return (
     <>
@@ -157,8 +179,6 @@ export default function Sidebar() {
         <nav className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-3">
           {menuItems.map((section) => (
             <div key={section.title} className="mb-6">
-              {/* TÊN NHÓM */}
-
               {open && (
                 <p className="mb-2 px-2 text-[10px] font-medium tracking-wider text-slate-500">
                   {section.title}
@@ -192,8 +212,6 @@ export default function Sidebar() {
                           )}
                         </Link>
 
-                        {/* TOOLTIP */}
-
                         {!open && (
                           <div className="pointer-events-none absolute left-14 top-1/2 z-[70] -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-3 py-2 text-xs text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
                             {item.label}
@@ -216,8 +234,6 @@ export default function Sidebar() {
                         {open && <span className="text-sm">{item.label}</span>}
                       </button>
 
-                      {/* TOOLTIP */}
-
                       {!open && (
                         <div className="pointer-events-none absolute left-14 top-1/2 z-[70] -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-3 py-2 text-xs text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
                           {item.label}
@@ -232,7 +248,7 @@ export default function Sidebar() {
         </nav>
 
         {/* =========================
-            ADMIN
+            USER
         ========================= */}
 
         <div className="shrink-0 border-t border-slate-800 p-3">
@@ -242,17 +258,34 @@ export default function Sidebar() {
             }`}
           >
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500 text-sm font-semibold text-white">
-              KH
+              {initials}
             </div>
 
             {open && (
-              <div>
-                <p className="text-sm font-medium">Khoa</p>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">
+                  {user?.email ? user.email.split("@")[0] : "Tài khoản"}
+                </p>
 
-                <p className="text-xs text-slate-400">Quản trị viên</p>
+                <p className="truncate text-xs text-slate-400">{email}</p>
               </div>
             )}
           </div>
+
+          {/* ĐĂNG XUẤT */}
+
+          {open && (
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={loggingOut}
+              className="mt-3 flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm text-slate-400 transition hover:bg-red-500/10 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <LogOut className="h-4 w-4" />
+
+              {loggingOut ? "Đang đăng xuất..." : "Đăng xuất"}
+            </button>
+          )}
         </div>
       </aside>
 

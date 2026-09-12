@@ -85,38 +85,54 @@ export default function BaoCaoPage() {
   const classNames = Array.from(
     new Set(students.map((student) => student.className).filter(Boolean)),
   );
-
   const attendanceRecords = useMemo(() => {
     const result: {
       studentId: number;
       studentName: string;
       className: string;
+      date: string;
       status: string;
       note: string;
     }[] = [];
 
-    classNames.forEach((className) => {
-      const records = getAttendance(fromDate, className);
+    if (fromDate > toDate) {
+      return result;
+    }
 
-      students
-        .filter((student) => student.className === className)
-        .forEach((student) => {
-          const record = records[student.id];
+    const start = new Date(`${fromDate}T00:00:00`);
+    const end = new Date(`${toDate}T00:00:00`);
 
-          if (record) {
-            result.push({
-              studentId: student.id,
-              studentName: student.name,
-              className,
-              status: record.status,
-              note: record.note,
-            });
-          }
-        });
-    });
+    for (
+      const current = new Date(start);
+      current <= end;
+      current.setDate(current.getDate() + 1)
+    ) {
+      const date = current.toISOString().split("T")[0];
+
+      classNames.forEach((className) => {
+        const records = getAttendance(date, className);
+
+        students
+          .filter((student) => student.className === className)
+          .forEach((student) => {
+            const record = records[student.id];
+
+            if (record) {
+              result.push({
+                studentId: student.id,
+                studentName: student.name,
+                className,
+                date,
+                status: record.status,
+                note: record.note,
+              });
+            }
+          });
+      });
+    }
 
     return result;
-  }, [classNames, fromDate, getAttendance, students]);
+  }, [classNames, fromDate, toDate, getAttendance, students]);
 
   // =========================
   // CẤP ĐAI
@@ -198,9 +214,10 @@ export default function BaoCaoPage() {
 
     if (reportType === "Điểm danh") {
       rows = [
-        ["STT", "Học viên", "Lớp", "Trạng thái", "Ghi chú"],
+        ["STT", "Ngày", "Học viên", "Lớp", "Trạng thái", "Ghi chú"],
         ...attendanceRecords.map((record, index) => [
           String(index + 1),
+          record.date,
           record.studentName,
           record.className,
           record.status,
@@ -335,10 +352,11 @@ export default function BaoCaoPage() {
             <thead>
               <tr>
                 <th>STT</th>
+                <th>Ngày</th>
                 <th>Học viên</th>
                 <th>Lớp</th>
-                <th>Cấp đai</th>
                 <th>Trạng thái</th>
+                <th>Ghi chú</th>
               </tr>
             </thead>
 
@@ -517,8 +535,10 @@ export default function BaoCaoPage() {
 
             <tbody>
               {attendanceRecords.map((record, index) => (
-                <tr key={record.studentId}>
+                <tr key={`${record.date}-${record.studentId}-${index}`}>
                   <td>{index + 1}</td>
+
+                  <td>{record.date}</td>
 
                   <td>{record.studentName}</td>
 
@@ -586,9 +606,7 @@ function ReportTable({ children }: { children: React.ReactNode }) {
   return (
     <div className="overflow-hidden rounded-xl border bg-white">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-slate-50">{children}</thead>
-        </table>
+        <table className="w-full text-sm">{children}</table>
       </div>
     </div>
   );
