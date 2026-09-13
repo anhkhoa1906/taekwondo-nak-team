@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import {
   Award,
   CalendarDays,
@@ -9,14 +8,22 @@ import {
   Plus,
   Search,
   Trash2,
+  Upload,
   UserRound,
   Users,
   X,
 } from "lucide-react";
 
-import { useCoaches, type Coach } from "@/context/coach-context";
-import { useRole } from "@/hooks/use-role";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+
+import { createClient } from "@/lib/supabase/client";
+
+import { useStudents } from "@/context/student-context";
+import { useTuition } from "@/context/tuition-context";
+import { useAttendance } from "@/context/attendance-context";
 import { useClasses } from "@/context/class-context";
+import { useCoaches, type Coach } from "@/context/coach-context";
+import { useClub } from "@/context/club-context";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,9 +55,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+// =====================================================
+// OPTIONS
+// =====================================================
+
 const statusOptions = ["Đang hoạt động", "Tạm nghỉ"];
 
 const specializationOptions = ["Taekwondo", "Kyorugi", "Poomsae"];
+
+// =====================================================
+// TYPES
+// =====================================================
 
 type NewCoach = {
   name: string;
@@ -61,16 +76,50 @@ type NewCoach = {
   joinDate: string;
   status: string;
   note: string;
+  avatarUrl: string;
 };
+
+type CoachFormProps = {
+  newCoach: NewCoach;
+  setNewCoach: React.Dispatch<React.SetStateAction<NewCoach>>;
+
+  avatarFile: File | null;
+
+  setAvatarFile: React.Dispatch<React.SetStateAction<File | null>>;
+
+  avatarPreview: string;
+
+  editingCoach: Coach | null;
+};
+
+// =====================================================
+// HELPERS
+// =====================================================
 
 function getToday() {
   return new Date().toISOString().split("T")[0];
 }
 
+function formatDateForInput(date: string) {
+  if (!date) return "";
+
+  const parts = date.split("/");
+
+  if (parts.length === 3) {
+    const [day, month, year] = parts;
+
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  return date;
+}
+
 function getInitials(name: string) {
   const words = name.trim().split(/\s+/);
 
-  if (words.length === 0) return "?";
+  if (!words.length || !words[0]) {
+    return "?";
+  }
 
   if (words.length === 1) {
     return words[0].slice(0, 2).toUpperCase();
@@ -89,7 +138,7 @@ function getStatusClass(status: string) {
 
 function getSpecializationClass(specialization: string) {
   if (specialization === "Kyorugi") {
-    return "border-red-200 bg-red-50 text-red-700";
+    return "border-amber-200 bg-amber-50 text-amber-700";
   }
 
   if (specialization === "Poomsae") {
@@ -99,22 +148,390 @@ function getSpecializationClass(specialization: string) {
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
+// =====================================================
+// COACH FORM
+// =====================================================
+//
+// Component nằm ngoài page để tránh remount.
+// Không bị mất focus khi nhập.
+// =====================================================
+
+function CoachForm({
+  newCoach,
+  setNewCoach,
+  avatarFile,
+  setAvatarFile,
+  avatarPreview,
+  editingCoach,
+}: CoachFormProps) {
+  function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Vui lòng chọn file ảnh.");
+      event.target.value = "";
+      return;
+    }
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    if (!allowedTypes.includes(file.type)) {
+      alert("Chỉ hỗ trợ ảnh JPG, PNG hoặc WEBP.");
+
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert("Ảnh không được vượt quá 2MB.");
+
+      event.target.value = "";
+      return;
+    }
+
+    setAvatarFile(file);
+  }
+
+  function handleRemoveAvatar() {
+    setAvatarFile(null);
+
+    setNewCoach((prev) => ({
+      ...prev,
+      avatarUrl: "",
+    }));
+  }
+
+  return (
+    <div className="max-h-[70vh] overflow-y-auto pr-2">
+      <div className="space-y-6 py-2">
+        {/* AVATAR */}
+
+        <div className="rounded-2xl border bg-slate-50 p-5">
+          <div className="mb-4">
+            <h3 className="font-semibold text-slate-900">Ảnh đại diện</h3>
+
+            <p className="mt-1 text-xs text-muted-foreground">
+              {editingCoach
+                ? "Bạn có thể đổi hoặc xóa ảnh đại diện hiện tại."
+                : "Thêm ảnh đại diện cho huấn luyện viên."}
+            </p>
+          </div>
+
+          <div className="flex flex-col items-center gap-5 sm:flex-row">
+            <div className="relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-slate-200 shadow-sm">
+              {avatarPreview ? (
+                <img
+                  src={avatarPreview}
+                  alt="Ảnh đại diện HLV"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <UserRound className="h-12 w-12 text-slate-400" />
+              )}
+            </div>
+
+            <div className="flex flex-col items-center gap-3 sm:items-start">
+              <div className="flex flex-wrap justify-center gap-2 sm:justify-start">
+                <label
+                  htmlFor="coach-avatar"
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-lg border bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-100"
+                >
+                  <Upload className="h-4 w-4" />
+
+                  {editingCoach ? "Đổi ảnh" : "Chọn ảnh"}
+                </label>
+
+                {avatarPreview && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRemoveAvatar}
+                    className="text-red-600 hover:text-red-700"
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Xóa ảnh
+                  </Button>
+                )}
+              </div>
+
+              <input
+                id="coach-avatar"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={handleAvatarChange}
+              />
+
+              <p className="text-xs text-muted-foreground">
+                JPG, PNG hoặc WEBP · Tối đa 2MB
+              </p>
+
+              {avatarFile && (
+                <p className="max-w-[280px] truncate text-xs font-medium text-emerald-600">
+                  Đã chọn: {avatarFile.name}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* PERSONAL */}
+
+        <div>
+          <div className="mb-4">
+            <h3 className="font-semibold text-slate-900">Thông tin cá nhân</h3>
+
+            <p className="mt-1 text-xs text-muted-foreground">
+              Thông tin cơ bản của huấn luyện viên.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Họ và tên <span className="text-red-500">*</span>
+              </label>
+
+              <Input
+                value={newCoach.name}
+                onChange={(e) =>
+                  setNewCoach((prev) => ({
+                    ...prev,
+                    name: e.target.value,
+                  }))
+                }
+                placeholder="Nguyễn Văn A"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Số điện thoại <span className="text-red-500">*</span>
+              </label>
+
+              <Input
+                type="tel"
+                value={newCoach.phone}
+                onChange={(e) =>
+                  setNewCoach((prev) => ({
+                    ...prev,
+                    phone: e.target.value,
+                  }))
+                }
+                placeholder="0901 234 567"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Ngày sinh <span className="text-red-500">*</span>
+              </label>
+
+              <div className="relative">
+                <CalendarDays className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+                <Input
+                  type="date"
+                  value={newCoach.birthDate}
+                  onChange={(e) =>
+                    setNewCoach((prev) => ({
+                      ...prev,
+                      birthDate: e.target.value,
+                    }))
+                  }
+                  className="pl-9"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Giới tính <span className="text-red-500">*</span>
+              </label>
+
+              <Select
+                value={newCoach.gender}
+                onValueChange={(value) =>
+                  setNewCoach((prev) => ({
+                    ...prev,
+                    gender: value ?? "",
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Chọn giới tính" />
+                </SelectTrigger>
+
+                <SelectContent>
+                  <SelectItem value="Nam">Nam</SelectItem>
+
+                  <SelectItem value="Nữ">Nữ</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
+        {/* PROFESSIONAL */}
+
+        <div className="border-t pt-5">
+          <div className="mb-4">
+            <h3 className="font-semibold text-slate-900">
+              Thông tin chuyên môn
+            </h3>
+
+            <p className="mt-1 text-xs text-muted-foreground">
+              Chuyên môn và trạng thái làm việc tại CLB.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Chuyên môn</label>
+
+              <Select
+                value={newCoach.specialization}
+                onValueChange={(value) =>
+                  setNewCoach((prev) => ({
+                    ...prev,
+                    specialization: value ?? "",
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Chọn chuyên môn" />
+                </SelectTrigger>
+
+                <SelectContent>
+                  {specializationOptions.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {item}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Ngày tham gia <span className="text-red-500">*</span>
+              </label>
+
+              <div className="relative">
+                <CalendarDays className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+                <Input
+                  type="date"
+                  value={newCoach.joinDate}
+                  onChange={(e) =>
+                    setNewCoach((prev) => ({
+                      ...prev,
+                      joinDate: e.target.value,
+                    }))
+                  }
+                  className="pl-9"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Trạng thái</label>
+
+              <Select
+                value={newCoach.status}
+                onValueChange={(value) =>
+                  setNewCoach((prev) => ({
+                    ...prev,
+                    status: value ?? "",
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+
+                <SelectContent>
+                  {statusOptions.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Ghi chú</label>
+
+              <Input
+                value={newCoach.note}
+                onChange={(e) =>
+                  setNewCoach((prev) => ({
+                    ...prev,
+                    note: e.target.value,
+                  }))
+                }
+                placeholder="Ghi chú..."
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =====================================================
+// PAGE
+// =====================================================
+
 export default function HuanLuyenVienPage() {
   const { coaches, addCoach, updateCoach, deleteCoach } = useCoaches();
 
-  const { isStaff } = useRole();
-
   const { classes } = useClasses();
 
+  const { students } = useStudents();
+
+  const { getAllTuition } = useTuition();
+
+  const { getTodayAttendanceSummary } = useAttendance();
+
+  const { club } = useClub();
+
+  // ===================================================
+  // ROLE / ACCESS
+  // ===================================================
+
+  const canManage =
+    club?.role === "admin" ||
+    (club?.role === "coach" && club.accessLevel === "manage");
+
+  const isStaff = club?.role === "staff";
+
+  // ===================================================
+  // STATE
+  // ===================================================
+
   const [search, setSearch] = useState("");
+
   const [statusFilter, setStatusFilter] = useState("all");
 
   const [open, setOpen] = useState(false);
+
   const [viewOpen, setViewOpen] = useState(false);
 
   const [editingCoach, setEditingCoach] = useState<Coach | null>(null);
 
   const [selectedCoach, setSelectedCoach] = useState<Coach | null>(null);
+
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+
+  const [avatarPreview, setAvatarPreview] = useState("");
+
+  const [saving, setSaving] = useState(false);
 
   const [newCoach, setNewCoach] = useState<NewCoach>({
     name: "",
@@ -125,13 +542,32 @@ export default function HuanLuyenVienPage() {
     joinDate: getToday(),
     status: "Đang hoạt động",
     note: "",
+    avatarUrl: "",
   });
 
-  /*
-   * =========================
-   * STATS
-   * =========================
-   */
+  // ===================================================
+  // AVATAR PREVIEW
+  // ===================================================
+
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview(newCoach.avatarUrl || "");
+
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(avatarFile);
+
+    setAvatarPreview(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [avatarFile, newCoach.avatarUrl]);
+
+  // ===================================================
+  // STATS
+  // ===================================================
 
   const stats = useMemo(() => {
     const total = coaches.length;
@@ -156,11 +592,9 @@ export default function HuanLuyenVienPage() {
     };
   }, [coaches]);
 
-  /*
-   * =========================
-   * FILTER
-   * =========================
-   */
+  // ===================================================
+  // FILTER
+  // ===================================================
 
   const filteredCoaches = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -169,9 +603,7 @@ export default function HuanLuyenVienPage() {
       const matchesSearch =
         !keyword ||
         coach.name.toLowerCase().includes(keyword) ||
-        String(coach.phone ?? "")
-          .toLowerCase()
-          .includes(keyword);
+        coach.phone.toLowerCase().includes(keyword);
 
       const matchesStatus =
         statusFilter === "all" || coach.status === statusFilter;
@@ -180,11 +612,9 @@ export default function HuanLuyenVienPage() {
     });
   }, [coaches, search, statusFilter]);
 
-  /*
-   * =========================
-   * FORM
-   * =========================
-   */
+  // ===================================================
+  // RESET
+  // ===================================================
 
   function resetForm() {
     setNewCoach({
@@ -196,375 +626,292 @@ export default function HuanLuyenVienPage() {
       joinDate: getToday(),
       status: "Đang hoạt động",
       note: "",
+      avatarUrl: "",
     });
+
+    setAvatarFile(null);
+    setAvatarPreview("");
   }
 
-  /*
-   * =========================
-   * ADD
-   * =========================
-   */
+  // ===================================================
+  // OPEN ADD
+  // ===================================================
 
   function handleOpenAdd() {
+    if (!canManage) {
+      return;
+    }
+
     setEditingCoach(null);
     resetForm();
     setOpen(true);
   }
 
-  /*
-   * =========================
-   * EDIT
-   * =========================
-   */
+  // ===================================================
+  // OPEN EDIT
+  // ===================================================
 
   function handleOpenEdit(coach: Coach) {
+    if (!canManage) {
+      return;
+    }
+
     setEditingCoach(coach);
 
     setNewCoach({
       name: coach.name,
       phone: coach.phone,
-      birthDate: coach.birthDate,
+      birthDate: formatDateForInput(coach.birthDate),
       gender: coach.gender,
       specialization: coach.specialization,
-      joinDate: coach.joinDate,
+      joinDate: formatDateForInput(coach.joinDate),
       status: coach.status,
       note: coach.note,
+      avatarUrl: coach.avatarUrl || "",
     });
+
+    setAvatarFile(null);
+
+    setAvatarPreview(coach.avatarUrl || "");
 
     setOpen(true);
   }
 
-  /*
-   * =========================
-   * VIEW
-   * =========================
-   */
+  // ===================================================
+  // VIEW
+  // ===================================================
 
   function handleOpenView(coach: Coach) {
     setSelectedCoach(coach);
     setViewOpen(true);
   }
 
-  /*
-   * =========================
-   * SAVE
-   * =========================
-   */
+  // ===================================================
+  // UPLOAD
+  // ===================================================
 
-  function handleSave() {
+  async function uploadCoachAvatar(file: File) {
+    if (!club?.id) {
+      throw new Error("Không xác định được CLB hiện tại.");
+    }
+
+    const supabase = createClient();
+
+    const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+
+    const fileName = `${crypto.randomUUID()}.${extension}`;
+
+    const filePath = `${club.id}/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("coach-avatars")
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: file.type,
+      });
+
+    if (uploadError) {
+      console.error("Lỗi upload ảnh HLV:", uploadError);
+
+      throw new Error(uploadError.message || "Không thể tải ảnh lên.");
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from("coach-avatars")
+      .getPublicUrl(filePath);
+
+    return publicUrlData.publicUrl;
+  }
+
+  // ===================================================
+  // SAVE
+  // ===================================================
+
+  async function handleSave() {
+    if (!canManage) {
+      alert("Bạn không có quyền quản lý HLV.");
+
+      return;
+    }
+
     if (!newCoach.name.trim()) {
       alert("Vui lòng nhập tên huấn luyện viên.");
+
       return;
     }
 
     if (!newCoach.phone.trim()) {
       alert("Vui lòng nhập số điện thoại.");
+
       return;
     }
 
     if (!newCoach.birthDate) {
       alert("Vui lòng chọn ngày sinh.");
+
       return;
     }
 
     if (!newCoach.gender) {
       alert("Vui lòng chọn giới tính.");
+
       return;
     }
 
     if (!newCoach.joinDate) {
       alert("Vui lòng chọn ngày tham gia.");
+
       return;
     }
 
-    if (editingCoach) {
-      updateCoach({
-        ...editingCoach,
-        ...newCoach,
-      });
+    if (!club?.id) {
+      alert("Không xác định được CLB hiện tại.");
 
-      alert("Đã cập nhật huấn luyện viên.");
-    } else {
-      addCoach({
-        id: Date.now(),
-        ...newCoach,
-      });
-
-      alert("Đã thêm huấn luyện viên.");
+      return;
     }
 
-    setOpen(false);
-    setEditingCoach(null);
-    resetForm();
+    try {
+      setSaving(true);
+
+      let avatarUrl = newCoach.avatarUrl || "";
+
+      // ---------------------------------------------
+      // UPLOAD NEW AVATAR
+      // ---------------------------------------------
+
+      if (avatarFile) {
+        avatarUrl = await uploadCoachAvatar(avatarFile);
+      }
+
+      // ---------------------------------------------
+      // UPDATE
+      // ---------------------------------------------
+
+      if (editingCoach) {
+        const result = await updateCoach({
+          ...editingCoach,
+          ...newCoach,
+          avatarUrl,
+        });
+
+        if (result.error) {
+          throw new Error(result.error);
+        }
+
+        alert("Đã cập nhật huấn luyện viên.");
+      }
+
+      // ---------------------------------------------
+      // ADD
+      // ---------------------------------------------
+      else {
+        const result = await addCoach({
+          id: 0,
+          ...newCoach,
+          avatarUrl,
+        });
+
+        if (result.error) {
+          throw new Error(result.error);
+        }
+
+        alert("Đã thêm huấn luyện viên.");
+      }
+
+      setOpen(false);
+      setEditingCoach(null);
+      resetForm();
+    } catch (error) {
+      console.error("Lỗi lưu HLV:", error);
+
+      alert(
+        error instanceof Error ? error.message : "Có lỗi xảy ra khi lưu HLV.",
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
-  /*
-   * =========================
-   * DELETE
-   * =========================
-   */
+  // ===================================================
+  // DELETE
+  // ===================================================
 
-  function handleDelete(coach: Coach) {
+  async function handleDelete(coach: Coach) {
+    if (!canManage) {
+      alert("Bạn không có quyền xóa HLV.");
+
+      return;
+    }
+
     const confirmDelete = window.confirm(
       `Bạn có chắc muốn xóa HLV "${coach.name}" không?`,
     );
 
-    if (!confirmDelete) return;
+    if (!confirmDelete) {
+      return;
+    }
 
-    deleteCoach(coach.id);
+    try {
+      const result = await deleteCoach(coach.id);
 
-    alert("Đã xóa huấn luyện viên.");
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      if (selectedCoach?.id === coach.id) {
+        setSelectedCoach(null);
+
+        setViewOpen(false);
+      }
+
+      alert("Đã xóa huấn luyện viên.");
+    } catch (error) {
+      console.error("Lỗi xóa HLV:", error);
+
+      alert(error instanceof Error ? error.message : "Không thể xóa HLV.");
+    }
   }
 
-  /*
-   * =========================
-   * CLASSES
-   * =========================
-   */
+  // ===================================================
+  // CLASSES
+  // ===================================================
 
   function getCoachClasses(coachName: string) {
     return classes.filter((classItem) => classItem.coach === coachName);
   }
 
-  /*
-   * =========================
-   * FORM UI
-   * =========================
-   */
+  // ===================================================
+  // EXTRA DATA
+  // ===================================================
 
-  function CoachForm() {
-    return (
-      <div className="max-h-[70vh] overflow-y-auto pr-2">
-        <div className="space-y-6 py-2">
-          {/* THÔNG TIN CÁ NHÂN */}
+  const activeStudents = students.filter(
+    (student) => student.status === "Đang tập",
+  );
 
-          <div>
-            <div className="mb-4">
-              <h3 className="font-semibold text-slate-900">
-                Thông tin cá nhân
-              </h3>
+  const currentMonth = new Date().toISOString().slice(0, 7);
 
-              <p className="mt-1 text-xs text-muted-foreground">
-                Thông tin cơ bản của huấn luyện viên.
-              </p>
-            </div>
+  const monthTuition = getAllTuition(currentMonth);
 
-            <div className="grid gap-4 md:grid-cols-2">
-              {/* NAME */}
+  const paidTuition = monthTuition
+    .filter((item) => item.status === "Đã đóng")
+    .reduce((total, item) => total + Number(item.amount || 0), 0);
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Họ và tên <span className="text-red-500">*</span>
-                </label>
+  const attendanceSummary = getTodayAttendanceSummary();
 
-                <Input
-                  value={newCoach.name}
-                  onChange={(e) =>
-                    setNewCoach({
-                      ...newCoach,
-                      name: e.target.value,
-                    })
-                  }
-                  placeholder="Nguyễn Văn A"
-                />
-              </div>
+  // Prevent unused-variable build warnings
+  void activeStudents;
+  void paidTuition;
+  void attendanceSummary;
+  void isStaff;
 
-              {/* PHONE */}
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Số điện thoại <span className="text-red-500">*</span>
-                </label>
-
-                <Input
-                  type="tel"
-                  value={newCoach.phone}
-                  onChange={(e) =>
-                    setNewCoach({
-                      ...newCoach,
-                      phone: e.target.value,
-                    })
-                  }
-                  placeholder="0901 234 567"
-                />
-              </div>
-
-              {/* BIRTH DATE */}
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Ngày sinh <span className="text-red-500">*</span>
-                </label>
-
-                <div className="relative">
-                  <CalendarDays className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-
-                  <Input
-                    type="date"
-                    value={newCoach.birthDate}
-                    onChange={(e) =>
-                      setNewCoach({
-                        ...newCoach,
-                        birthDate: e.target.value,
-                      })
-                    }
-                    className="pl-9"
-                  />
-                </div>
-              </div>
-
-              {/* GENDER */}
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Giới tính <span className="text-red-500">*</span>
-                </label>
-
-                <Select
-                  value={newCoach.gender}
-                  onValueChange={(value) =>
-                    setNewCoach({
-                      ...newCoach,
-                      gender: value ?? "",
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Chọn giới tính" />
-                  </SelectTrigger>
-
-                  <SelectContent>
-                    <SelectItem value="Nam">Nam</SelectItem>
-
-                    <SelectItem value="Nữ">Nữ</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-
-          {/* THÔNG TIN CHUYÊN MÔN */}
-
-          <div className="border-t pt-5">
-            <div className="mb-4">
-              <h3 className="font-semibold text-slate-900">
-                Thông tin chuyên môn
-              </h3>
-
-              <p className="mt-1 text-xs text-muted-foreground">
-                Chuyên môn và trạng thái làm việc tại CLB.
-              </p>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              {/* SPECIALIZATION */}
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Chuyên môn</label>
-
-                <Select
-                  value={newCoach.specialization}
-                  onValueChange={(value) =>
-                    setNewCoach({
-                      ...newCoach,
-                      specialization: value ?? "",
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Chọn chuyên môn" />
-                  </SelectTrigger>
-
-                  <SelectContent>
-                    {specializationOptions.map((item) => (
-                      <SelectItem key={item} value={item}>
-                        {item}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* JOIN DATE */}
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Ngày tham gia <span className="text-red-500">*</span>
-                </label>
-
-                <div className="relative">
-                  <CalendarDays className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-
-                  <Input
-                    type="date"
-                    value={newCoach.joinDate}
-                    onChange={(e) =>
-                      setNewCoach({
-                        ...newCoach,
-                        joinDate: e.target.value,
-                      })
-                    }
-                    className="pl-9"
-                  />
-                </div>
-              </div>
-
-              {/* STATUS */}
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Trạng thái</label>
-
-                <Select
-                  value={newCoach.status}
-                  onValueChange={(value) =>
-                    setNewCoach({
-                      ...newCoach,
-                      status: value ?? "",
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-
-                  <SelectContent>
-                    {statusOptions.map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {status}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* NOTE */}
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Ghi chú</label>
-
-                <Input
-                  value={newCoach.note}
-                  onChange={(e) =>
-                    setNewCoach({
-                      ...newCoach,
-                      note: e.target.value,
-                    })
-                  }
-                  placeholder="Ghi chú..."
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // ===================================================
+  // RENDER
+  // ===================================================
 
   return (
     <div className="space-y-6">
-      {/* =========================
-          HERO
-      ========================= */}
+      {/* HERO */}
 
       <div className="relative overflow-hidden rounded-2xl bg-slate-950 p-6 text-white shadow-sm md:p-8">
         <div className="relative z-10">
@@ -596,9 +943,7 @@ export default function HuanLuyenVienPage() {
         <div className="absolute -bottom-24 right-32 h-48 w-48 rounded-full bg-white/5" />
       </div>
 
-      {/* =========================
-          STATS
-      ========================= */}
+      {/* STATS */}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-2xl border bg-card p-5 shadow-sm">
@@ -668,7 +1013,7 @@ export default function HuanLuyenVienPage() {
                 Chuyên môn Kyorugi
               </p>
 
-              <p className="mt-2 text-3xl font-bold text-red-600">
+              <p className="mt-2 text-3xl font-bold text-amber-600">
                 {stats.kyorugi}
               </p>
 
@@ -677,16 +1022,14 @@ export default function HuanLuyenVienPage() {
               </p>
             </div>
 
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50">
-              <Award className="h-5 w-5 text-red-600" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50">
+              <Award className="h-5 w-5 text-amber-600" />
             </div>
           </div>
         </div>
       </div>
 
-      {/* =========================
-          ACTION BAR
-      ========================= */}
+      {/* ACTION */}
 
       <div className="flex flex-col gap-3 rounded-2xl border bg-card p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -699,7 +1042,7 @@ export default function HuanLuyenVienPage() {
           </p>
         </div>
 
-        {!isStaff && (
+        {canManage && (
           <Button onClick={handleOpenAdd} className="gap-2">
             <Plus className="h-4 w-4" />
             Thêm HLV
@@ -707,9 +1050,7 @@ export default function HuanLuyenVienPage() {
         )}
       </div>
 
-      {/* =========================
-          FILTER
-      ========================= */}
+      {/* FILTER */}
 
       <div className="rounded-2xl border bg-card p-5 shadow-sm">
         <div className="mb-4">
@@ -771,9 +1112,7 @@ export default function HuanLuyenVienPage() {
         )}
       </div>
 
-      {/* =========================
-          TABLE
-      ========================= */}
+      {/* TABLE */}
 
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="overflow-x-auto">
@@ -782,7 +1121,7 @@ export default function HuanLuyenVienPage() {
               <TableRow className="bg-slate-50 hover:bg-slate-50">
                 <TableHead className="w-[60px]">STT</TableHead>
 
-                <TableHead className="min-w-[240px]">Huấn luyện viên</TableHead>
+                <TableHead className="min-w-[280px]">Huấn luyện viên</TableHead>
 
                 <TableHead className="min-w-[150px]">Số điện thoại</TableHead>
 
@@ -802,19 +1141,23 @@ export default function HuanLuyenVienPage() {
               {filteredCoaches.length > 0 ? (
                 filteredCoaches.map((coach, index) => (
                   <TableRow key={coach.id} className="hover:bg-slate-50/70">
-                    {/* STT */}
-
                     <TableCell className="font-medium text-muted-foreground">
                       {index + 1}
                     </TableCell>
 
-                    {/* COACH */}
-
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
-                          {getInitials(coach.name)}
-                        </div>
+                        {coach.avatarUrl ? (
+                          <img
+                            src={coach.avatarUrl}
+                            alt={coach.name}
+                            className="h-10 w-10 shrink-0 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
+                            {getInitials(coach.name)}
+                          </div>
+                        )}
 
                         <div className="min-w-0">
                           <p className="truncate font-semibold text-slate-900">
@@ -828,37 +1171,27 @@ export default function HuanLuyenVienPage() {
                       </div>
                     </TableCell>
 
-                    {/* PHONE */}
-
-                    <TableCell>{coach.phone}</TableCell>
-
-                    {/* SPECIALIZATION */}
+                    <TableCell>{coach.phone || "-"}</TableCell>
 
                     <TableCell>
                       <Badge
                         variant="outline"
                         className={getSpecializationClass(coach.specialization)}
                       >
-                        {coach.specialization}
+                        {coach.specialization || "Chưa cập nhật"}
                       </Badge>
                     </TableCell>
 
-                    {/* JOIN DATE */}
-
                     <TableCell>{coach.joinDate || "-"}</TableCell>
-
-                    {/* STATUS */}
 
                     <TableCell>
                       <Badge
                         variant="outline"
                         className={getStatusClass(coach.status)}
                       >
-                        {coach.status}
+                        {coach.status || "Chưa cập nhật"}
                       </Badge>
                     </TableCell>
-
-                    {/* ACTION */}
 
                     <TableCell>
                       <div className="flex justify-end gap-1">
@@ -871,7 +1204,7 @@ export default function HuanLuyenVienPage() {
                           <Eye className="h-4 w-4" />
                         </Button>
 
-                        {!isStaff && (
+                        {canManage && (
                           <>
                             <Button
                               variant="ghost"
@@ -933,11 +1266,22 @@ export default function HuanLuyenVienPage() {
         </div>
       </div>
 
-      {/* =========================
-          ADD / EDIT
-      ========================= */}
+      {/* ADD / EDIT */}
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(value) => {
+          if (saving) return;
+
+          setOpen(value);
+
+          if (!value) {
+            setEditingCoach(null);
+
+            resetForm();
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
@@ -953,23 +1297,45 @@ export default function HuanLuyenVienPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <CoachForm />
+          <CoachForm
+            newCoach={newCoach}
+            setNewCoach={setNewCoach}
+            avatarFile={avatarFile}
+            setAvatarFile={setAvatarFile}
+            avatarPreview={avatarPreview}
+            editingCoach={editingCoach}
+          />
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button
+              variant="outline"
+              disabled={saving}
+              onClick={() => {
+                setOpen(false);
+                setEditingCoach(null);
+                resetForm();
+              }}
+            >
               Hủy
             </Button>
 
-            <Button onClick={handleSave}>
-              {editingCoach ? "Lưu thay đổi" : "Thêm HLV"}
+            <Button disabled={saving} onClick={handleSave} className="gap-2">
+              {saving ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Đang lưu...
+                </>
+              ) : editingCoach ? (
+                "Lưu thay đổi"
+              ) : (
+                "Thêm HLV"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* =========================
-          VIEW
-      ========================= */}
+      {/* VIEW */}
 
       <Dialog open={viewOpen} onOpenChange={setViewOpen}>
         <DialogContent className="max-w-xl">
@@ -983,12 +1349,18 @@ export default function HuanLuyenVienPage() {
 
           {selectedCoach && (
             <div className="space-y-5">
-              {/* PROFILE */}
-
               <div className="flex items-center gap-4 rounded-2xl bg-slate-50 p-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-900 text-lg font-bold text-white">
-                  {getInitials(selectedCoach.name)}
-                </div>
+                {selectedCoach.avatarUrl ? (
+                  <img
+                    src={selectedCoach.avatarUrl}
+                    alt={selectedCoach.name}
+                    className="h-16 w-16 shrink-0 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-slate-900 text-lg font-bold text-white">
+                    {getInitials(selectedCoach.name)}
+                  </div>
+                )}
 
                 <div className="min-w-0">
                   <h3 className="font-semibold text-slate-900">
@@ -996,7 +1368,7 @@ export default function HuanLuyenVienPage() {
                   </h3>
 
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {selectedCoach.specialization}
+                    {selectedCoach.specialization || "Chưa cập nhật"}
                   </p>
 
                   <div className="mt-2">
@@ -1010,13 +1382,13 @@ export default function HuanLuyenVienPage() {
                 </div>
               </div>
 
-              {/* BASIC INFO */}
-
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <p className="text-xs text-muted-foreground">Số điện thoại</p>
 
-                  <p className="mt-1 font-medium">{selectedCoach.phone}</p>
+                  <p className="mt-1 font-medium">
+                    {selectedCoach.phone || "Chưa cập nhật"}
+                  </p>
                 </div>
 
                 <div>
@@ -1044,8 +1416,6 @@ export default function HuanLuyenVienPage() {
                 </div>
               </div>
 
-              {/* NOTE */}
-
               <div>
                 <p className="text-xs text-muted-foreground">Ghi chú</p>
 
@@ -1053,8 +1423,6 @@ export default function HuanLuyenVienPage() {
                   {selectedCoach.note || "Không có ghi chú"}
                 </p>
               </div>
-
-              {/* CLASSES */}
 
               <div className="border-t pt-5">
                 <div className="mb-3 flex items-center justify-between">

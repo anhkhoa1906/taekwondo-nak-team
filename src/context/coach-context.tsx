@@ -7,6 +7,7 @@ import {
   useEffect,
   useState,
 } from "react";
+
 import { createClient } from "@/lib/supabase/client";
 import { useClub } from "@/context/club-context";
 
@@ -20,13 +21,21 @@ export type Coach = {
   joinDate: string;
   status: string;
   note: string;
+  avatarUrl: string;
+};
+
+type CoachActionResult = {
+  error: string | null;
 };
 
 type CoachContextType = {
   coaches: Coach[];
-  addCoach: (coach: Coach) => Promise<void>;
-  updateCoach: (coach: Coach) => Promise<void>;
-  deleteCoach: (id: number) => Promise<void>;
+
+  addCoach: (coach: Coach) => Promise<CoachActionResult>;
+
+  updateCoach: (coach: Coach) => Promise<CoachActionResult>;
+
+  deleteCoach: (id: number) => Promise<CoachActionResult>;
 };
 
 type CoachRow = {
@@ -40,9 +49,14 @@ type CoachRow = {
   join_date: string | null;
   status: string | null;
   note: string | null;
+  avatar_url: string | null;
 };
 
 const CoachContext = createContext<CoachContextType | undefined>(undefined);
+
+// =====================================================
+// DATE HELPERS
+// =====================================================
 
 function formatDateForDisplay(date: string | null) {
   if (!date) return "";
@@ -59,7 +73,6 @@ function formatDateForDisplay(date: string | null) {
 function formatDateForDatabase(date: string) {
   if (!date) return null;
 
-  // DD/MM/YYYY -> YYYY-MM-DD
   const parts = date.split("/");
 
   if (parts.length === 3) {
@@ -68,9 +81,12 @@ function formatDateForDatabase(date: string) {
     return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
   }
 
-  // YYYY-MM-DD
   return date;
 }
+
+// =====================================================
+// MAP
+// =====================================================
 
 function mapCoach(row: CoachRow): Coach {
   return {
@@ -83,13 +99,46 @@ function mapCoach(row: CoachRow): Coach {
     joinDate: formatDateForDisplay(row.join_date),
     status: row.status ?? "",
     note: row.note ?? "",
+    avatarUrl: row.avatar_url ?? "",
   };
 }
+
+// =====================================================
+// AVATAR PATH
+// =====================================================
+
+function getCoachAvatarPath(avatarUrl: string) {
+  if (!avatarUrl) return null;
+
+  try {
+    const url = new URL(avatarUrl);
+
+    const marker = "/storage/v1/object/public/coach-avatars/";
+
+    const index = url.pathname.indexOf(marker);
+
+    if (index === -1) {
+      return null;
+    }
+
+    return url.pathname.substring(index + marker.length);
+  } catch {
+    return null;
+  }
+}
+
+// =====================================================
+// PROVIDER
+// =====================================================
 
 export function CoachProvider({ children }: { children: React.ReactNode }) {
   const { club, loading: clubLoading } = useClub();
 
   const [coaches, setCoaches] = useState<Coach[]>([]);
+
+  // ===================================================
+  // LOAD
+  // ===================================================
 
   const loadCoaches = useCallback(async () => {
     if (!club?.id) {
@@ -103,15 +152,22 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
       .from("coaches")
       .select("*")
       .eq("club_id", club.id)
-      .order("id", { ascending: true });
+      .order("id", {
+        ascending: true,
+      });
 
     if (error) {
       console.error("Lỗi tải danh sách HLV:", error);
+      setCoaches([]);
       return;
     }
 
     setCoaches((data as CoachRow[]).map(mapCoach));
   }, [club?.id]);
+
+  // ===================================================
+  // INITIAL LOAD
+  // ===================================================
 
   useEffect(() => {
     if (clubLoading) return;
@@ -119,11 +175,32 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
     loadCoaches();
   }, [clubLoading, loadCoaches]);
 
+  // ===================================================
+  // LISTEN CLUB CHANGE
+  // ===================================================
+
+  useEffect(() => {
+    function handleClubChanged() {
+      loadCoaches();
+    }
+
+    window.addEventListener("club-changed", handleClubChanged);
+
+    return () => {
+      window.removeEventListener("club-changed", handleClubChanged);
+    };
+  }, [loadCoaches]);
+
+  // ===================================================
+  // ADD
+  // ===================================================
+
   const addCoach = useCallback(
-    async (coach: Coach) => {
+    async (coach: Coach): Promise<CoachActionResult> => {
       if (!club?.id) {
-        console.error("Không xác định được CLB hiện tại.");
-        return;
+        return {
+          error: "Không xác định được CLB hiện tại.",
+        };
       }
 
       const supabase = createClient();
@@ -132,48 +209,64 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
         .from("coaches")
         .insert({
           club_id: club.id,
-          name: coach.name,
-          phone: coach.phone,
+          name: coach.name.trim(),
+          phone: coach.phone.trim(),
           birth_date: formatDateForDatabase(coach.birthDate),
           gender: coach.gender,
           specialization: coach.specialization,
           join_date: formatDateForDatabase(coach.joinDate),
           status: coach.status,
-          note: coach.note,
+          note: coach.note.trim(),
+          avatar_url: coach.avatarUrl || null,
         })
         .select()
         .single();
 
       if (error) {
         console.error("Lỗi thêm HLV:", error);
-        return;
+
+        return {
+          error: error.message,
+        };
       }
 
       setCoaches((prev) => [mapCoach(data as CoachRow), ...prev]);
+
+      return {
+        error: null,
+      };
     },
     [club?.id],
   );
 
+  // ===================================================
+  // UPDATE
+  // ===================================================
+
   const updateCoach = useCallback(
-    async (coach: Coach) => {
+    async (coach: Coach): Promise<CoachActionResult> => {
       if (!club?.id) {
-        console.error("Không xác định được CLB hiện tại.");
-        return;
+        return {
+          error: "Không xác định được CLB hiện tại.",
+        };
       }
 
       const supabase = createClient();
 
+      const oldCoach = coaches.find((item) => item.id === coach.id);
+
       const { data, error } = await supabase
         .from("coaches")
         .update({
-          name: coach.name,
-          phone: coach.phone,
+          name: coach.name.trim(),
+          phone: coach.phone.trim(),
           birth_date: formatDateForDatabase(coach.birthDate),
           gender: coach.gender,
           specialization: coach.specialization,
           join_date: formatDateForDatabase(coach.joinDate),
           status: coach.status,
-          note: coach.note,
+          note: coach.note.trim(),
+          avatar_url: coach.avatarUrl || null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", coach.id)
@@ -183,26 +276,58 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error("Lỗi cập nhật HLV:", error);
-        return;
+
+        return {
+          error: error.message,
+        };
       }
 
+      const updatedCoach = mapCoach(data as CoachRow);
+
       setCoaches((prev) =>
-        prev.map((item) =>
-          item.id === coach.id ? mapCoach(data as CoachRow) : item,
-        ),
+        prev.map((item) => (item.id === coach.id ? updatedCoach : item)),
       );
+
+      // ---------------------------------------------
+      // XÓA AVATAR CŨ NẾU ĐÃ ĐỔI ẢNH
+      // ---------------------------------------------
+
+      if (oldCoach?.avatarUrl && oldCoach.avatarUrl !== coach.avatarUrl) {
+        const oldPath = getCoachAvatarPath(oldCoach.avatarUrl);
+
+        if (oldPath) {
+          const { error: removeError } = await supabase.storage
+            .from("coach-avatars")
+            .remove([oldPath]);
+
+          if (removeError) {
+            console.warn("Không thể xóa avatar cũ:", removeError);
+          }
+        }
+      }
+
+      return {
+        error: null,
+      };
     },
-    [club?.id],
+    [club?.id, coaches],
   );
 
+  // ===================================================
+  // DELETE
+  // ===================================================
+
   const deleteCoach = useCallback(
-    async (id: number) => {
+    async (id: number): Promise<CoachActionResult> => {
       if (!club?.id) {
-        console.error("Không xác định được CLB hiện tại.");
-        return;
+        return {
+          error: "Không xác định được CLB hiện tại.",
+        };
       }
 
       const supabase = createClient();
+
+      const coach = coaches.find((item) => item.id === id);
 
       const { error } = await supabase
         .from("coaches")
@@ -212,13 +337,42 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error("Lỗi xóa HLV:", error);
-        return;
+
+        return {
+          error: error.message,
+        };
       }
 
       setCoaches((prev) => prev.filter((item) => item.id !== id));
+
+      // ---------------------------------------------
+      // XÓA AVATAR SAU KHI XÓA DB THÀNH CÔNG
+      // ---------------------------------------------
+
+      if (coach?.avatarUrl) {
+        const avatarPath = getCoachAvatarPath(coach.avatarUrl);
+
+        if (avatarPath) {
+          const { error: removeError } = await supabase.storage
+            .from("coach-avatars")
+            .remove([avatarPath]);
+
+          if (removeError) {
+            console.warn("Không thể xóa avatar HLV:", removeError);
+          }
+        }
+      }
+
+      return {
+        error: null,
+      };
     },
-    [club?.id],
+    [club?.id, coaches],
   );
+
+  // ===================================================
+  // PROVIDER
+  // ===================================================
 
   return (
     <CoachContext.Provider
@@ -233,6 +387,10 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
     </CoachContext.Provider>
   );
 }
+
+// =====================================================
+// HOOK
+// =====================================================
 
 export function useCoaches() {
   const context = useContext(CoachContext);
