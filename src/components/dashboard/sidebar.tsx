@@ -97,6 +97,11 @@ const menuItems: {
         icon: Settings,
         href: "/cai-dat",
       },
+      {
+        label: "Quản lý tài khoản",
+        icon: UserRoundCog,
+        href: "/quan-ly-tai-khoan",
+      },
     ],
   },
 ];
@@ -106,7 +111,7 @@ export default function Sidebar() {
   const router = useRouter();
 
   const { user, profile, signOut } = useAuth();
-  const { isStaff } = useRole();
+  const { isAdmin } = useRole();
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -187,32 +192,63 @@ export default function Sidebar() {
         ========================= */}
 
         <nav className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-3">
-          {menuItems.map((section) => (
-            <div key={section.title} className="mb-6">
-              {open && (
-                <p className="mb-2 px-2 text-[10px] font-medium tracking-wider text-slate-500">
-                  {section.title}
-                </p>
-              )}
+          {menuItems.map((section) => {
+            const visibleItems = section.items.filter(
+              (item) => item.href !== "/quan-ly-tai-khoan" || isAdmin,
+            );
 
-              <div className="space-y-1">
-                {section.items.map((item) => {
-                  const Icon = item.icon;
+            if (visibleItems.length === 0) return null;
 
-                  if (item.href) {
-                    const isActive = pathname === item.href;
+            return (
+              <div key={section.title} className="mb-6">
+                {open && (
+                  <p className="mb-2 px-2 text-[10px] font-medium tracking-wider text-slate-500">
+                    {section.title}
+                  </p>
+                )}
+
+                <div className="space-y-1">
+                  {section.items.map((item) => {
+                    const Icon = item.icon;
+
+                    if (item.href) {
+                      const isActive = pathname === item.href;
+
+                      return (
+                        <div key={item.label} className="group relative">
+                          <Link
+                            href={item.href}
+                            onClick={() => setOpen(false)}
+                            className={`flex h-11 items-center rounded-xl transition-all ${
+                              open ? "gap-3 px-3" : "justify-center px-0"
+                            } ${
+                              isActive
+                                ? "bg-slate-800 text-white shadow-sm"
+                                : "text-slate-400 hover:bg-slate-900 hover:text-white"
+                            }`}
+                          >
+                            <Icon className="h-5 w-5 shrink-0" />
+
+                            {open && (
+                              <span className="text-sm">{item.label}</span>
+                            )}
+                          </Link>
+
+                          {!open && (
+                            <div className="pointer-events-none absolute left-14 top-1/2 z-[70] -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-3 py-2 text-xs text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
+                              {item.label}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
 
                     return (
                       <div key={item.label} className="group relative">
-                        <Link
-                          href={item.href}
-                          onClick={() => setOpen(false)}
-                          className={`flex h-11 items-center rounded-xl transition-all ${
+                        <button
+                          type="button"
+                          className={`flex h-11 w-full items-center rounded-xl text-slate-400 transition-all hover:bg-slate-900 hover:text-white ${
                             open ? "gap-3 px-3" : "justify-center px-0"
-                          } ${
-                            isActive
-                              ? "bg-slate-800 text-white shadow-sm"
-                              : "text-slate-400 hover:bg-slate-900 hover:text-white"
                           }`}
                         >
                           <Icon className="h-5 w-5 shrink-0" />
@@ -220,7 +256,7 @@ export default function Sidebar() {
                           {open && (
                             <span className="text-sm">{item.label}</span>
                           )}
-                        </Link>
+                        </button>
 
                         {!open && (
                           <div className="pointer-events-none absolute left-14 top-1/2 z-[70] -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-3 py-2 text-xs text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
@@ -229,32 +265,11 @@ export default function Sidebar() {
                         )}
                       </div>
                     );
-                  }
-
-                  return (
-                    <div key={item.label} className="group relative">
-                      <button
-                        type="button"
-                        className={`flex h-11 w-full items-center rounded-xl text-slate-400 transition-all hover:bg-slate-900 hover:text-white ${
-                          open ? "gap-3 px-3" : "justify-center px-0"
-                        }`}
-                      >
-                        <Icon className="h-5 w-5 shrink-0" />
-
-                        {open && <span className="text-sm">{item.label}</span>}
-                      </button>
-
-                      {!open && (
-                        <div className="pointer-events-none absolute left-14 top-1/2 z-[70] -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-3 py-2 text-xs text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
-                          {item.label}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
 
         {/* =========================
