@@ -1,6 +1,6 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, XAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis, Cell } from "recharts";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -11,22 +11,65 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 
-const data = [
-  { belt: "Trắng", students: 32 },
-  { belt: "Vàng", students: 45 },
-  { belt: "Xanh", students: 28 },
-  { belt: "Đỏ", students: 15 },
-  { belt: "Đen", students: 8 },
+import { useStudents } from "@/context/student-context";
+
+const BELTS = [
+  {
+    name: "Trắng",
+    color: "#F8FAFC",
+  },
+  { name: "Trắng 1 vạch", color: "#E2E8F0" },
+  { name: "Trắng 2 vạch", color: "#CBD5E1" },
+  {
+    name: "Vàng",
+    color: "#FACC15",
+  },
+  {
+    name: "Xanh lá",
+    color: "#22C55E",
+  },
+  {
+    name: "Xanh dương",
+    color: "#3B82F6",
+  },
+  {
+    name: "Đỏ cấp 4",
+    color: "#EF4444",
+  },
+  {
+    name: "Đỏ cấp 3",
+    color: "#DC2626",
+  },
+  {
+    name: "Đỏ cấp 2",
+    color: "#B91C1C",
+  },
+  {
+    name: "Đỏ cấp 1",
+    color: "#991B1B",
+  },
+  {
+    name: "Đen",
+    color: "#18181B",
+  },
 ];
 
 const chartConfig = {
   students: {
     label: "Học viên",
-    color: "var(--chart-2)",
   },
 } satisfies ChartConfig;
 
 export default function BeltChart() {
+  const { students } = useStudents();
+
+  const data = BELTS.map((belt) => ({
+    belt: belt.name,
+    students: students.filter((student) => student.belt.trim() === belt.name)
+      .length,
+    color: belt.color,
+  }));
+
   return (
     <Card className="w-full min-w-0">
       <CardHeader>
@@ -36,21 +79,44 @@ export default function BeltChart() {
       <CardContent>
         <ChartContainer
           config={chartConfig}
-          className="h-[320px] w-full min-w-0"
+          className="h-[360px] w-full min-w-0"
         >
-          <BarChart data={data}>
+          <BarChart
+            data={data}
+            margin={{
+              top: 20,
+              right: 10,
+              left: 0,
+              bottom: 45,
+            }}
+          >
             <CartesianGrid vertical={false} />
+
+            <YAxis
+              allowDecimals={false}
+              tickLine={false}
+              axisLine={false}
+              width={35}
+            />
 
             <XAxis
               dataKey="belt"
               tickLine={false}
               axisLine={false}
-              tickMargin={8}
+              tickMargin={10}
+              interval={0}
+              angle={-35}
+              textAnchor="end"
+              height={70}
             />
 
             <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
 
-            <Bar dataKey="students" fill="var(--color-students)" radius={6} />
+            <Bar dataKey="students" name="Học viên" radius={[6, 6, 0, 0]}>
+              {data.map((entry) => (
+                <Cell key={entry.belt} fill={entry.color} />
+              ))}
+            </Bar>
           </BarChart>
         </ChartContainer>
       </CardContent>

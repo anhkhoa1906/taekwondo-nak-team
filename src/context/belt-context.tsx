@@ -20,6 +20,21 @@ export type BeltRecord = {
   coach: string;
   note: string;
 };
+export const BELT_LEVELS = [
+  { name: "Trắng", color: "#F8FAFC" },
+  { name: "Trắng 1 vạch", color: "#E2E8F0" },
+  { name: "Trắng 2 vạch", color: "#CBD5E1" },
+  { name: "Vàng", color: "#FACC15" },
+  { name: "Xanh lá", color: "#22C55E" },
+  { name: "Xanh dương", color: "#3B82F6" },
+  { name: "Đỏ cấp 4", color: "#EF4444" },
+  { name: "Đỏ cấp 3", color: "#DC2626" },
+  { name: "Đỏ cấp 2", color: "#B91C1C" },
+  { name: "Đỏ cấp 1", color: "#991B1B" },
+  { name: "Đen", color: "#18181B" },
+] as const;
+
+export const BELT_NAMES = BELT_LEVELS.map((belt) => belt.name);
 
 type BeltContextType = {
   beltRecords: BeltRecord[];

@@ -1,7 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Eye, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import {
+  Award,
+  CalendarDays,
+  Eye,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  UserRound,
+  Users,
+  X,
+} from "lucide-react";
 
 import { useCoaches, type Coach } from "@/context/coach-context";
 import { useRole } from "@/hooks/use-role";
@@ -14,6 +25,8 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -26,23 +39,69 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
 const statusOptions = ["Đang hoạt động", "Tạm nghỉ"];
 
 const specializationOptions = ["Taekwondo", "Kyorugi", "Poomsae"];
 
-const emptyCoach = {
-  name: "",
-  phone: "",
-  birthDate: "",
-  gender: "",
-  specialization: "Taekwondo",
-  joinDate: "",
-  status: "Đang hoạt động",
-  note: "",
+type NewCoach = {
+  name: string;
+  phone: string;
+  birthDate: string;
+  gender: string;
+  specialization: string;
+  joinDate: string;
+  status: string;
+  note: string;
 };
+
+function getToday() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function getInitials(name: string) {
+  const words = name.trim().split(/\s+/);
+
+  if (words.length === 0) return "?";
+
+  if (words.length === 1) {
+    return words[0].slice(0, 2).toUpperCase();
+  }
+
+  return (words[0].charAt(0) + words[words.length - 1].charAt(0)).toUpperCase();
+}
+
+function getStatusClass(status: string) {
+  if (status === "Đang hoạt động") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  return "border-slate-200 bg-slate-100 text-slate-600";
+}
+
+function getSpecializationClass(specialization: string) {
+  if (specialization === "Kyorugi") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (specialization === "Poomsae") {
+    return "border-blue-200 bg-blue-50 text-blue-700";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
 
 export default function HuanLuyenVienPage() {
   const { coaches, addCoach, updateCoach, deleteCoach } = useCoaches();
+
   const { isStaff } = useRole();
 
   const { classes } = useClasses();
@@ -57,30 +116,106 @@ export default function HuanLuyenVienPage() {
 
   const [selectedCoach, setSelectedCoach] = useState<Coach | null>(null);
 
-  const [newCoach, setNewCoach] = useState(emptyCoach);
+  const [newCoach, setNewCoach] = useState<NewCoach>({
+    name: "",
+    phone: "",
+    birthDate: "",
+    gender: "",
+    specialization: "Taekwondo",
+    joinDate: getToday(),
+    status: "Đang hoạt động",
+    note: "",
+  });
+
+  /*
+   * =========================
+   * STATS
+   * =========================
+   */
+
+  const stats = useMemo(() => {
+    const total = coaches.length;
+
+    const active = coaches.filter(
+      (coach) => coach.status === "Đang hoạt động",
+    ).length;
+
+    const inactive = coaches.filter(
+      (coach) => coach.status === "Tạm nghỉ",
+    ).length;
+
+    const kyorugi = coaches.filter(
+      (coach) => coach.specialization === "Kyorugi",
+    ).length;
+
+    return {
+      total,
+      active,
+      inactive,
+      kyorugi,
+    };
+  }, [coaches]);
+
+  /*
+   * =========================
+   * FILTER
+   * =========================
+   */
 
   const filteredCoaches = useMemo(() => {
-    return coaches.filter((coach) => {
-      const matchSearch =
-        coach.name.toLowerCase().includes(search.toLowerCase()) ||
-        coach.phone.includes(search);
+    const keyword = search.trim().toLowerCase();
 
-      const matchStatus =
+    return coaches.filter((coach) => {
+      const matchesSearch =
+        !keyword ||
+        coach.name.toLowerCase().includes(keyword) ||
+        String(coach.phone ?? "")
+          .toLowerCase()
+          .includes(keyword);
+
+      const matchesStatus =
         statusFilter === "all" || coach.status === statusFilter;
 
-      return matchSearch && matchStatus;
+      return matchesSearch && matchesStatus;
     });
   }, [coaches, search, statusFilter]);
 
+  /*
+   * =========================
+   * FORM
+   * =========================
+   */
+
+  function resetForm() {
+    setNewCoach({
+      name: "",
+      phone: "",
+      birthDate: "",
+      gender: "",
+      specialization: "Taekwondo",
+      joinDate: getToday(),
+      status: "Đang hoạt động",
+      note: "",
+    });
+  }
+
+  /*
+   * =========================
+   * ADD
+   * =========================
+   */
+
   function handleOpenAdd() {
     setEditingCoach(null);
-
-    setNewCoach({
-      ...emptyCoach,
-    });
-
+    resetForm();
     setOpen(true);
   }
+
+  /*
+   * =========================
+   * EDIT
+   * =========================
+   */
 
   function handleOpenEdit(coach: Coach) {
     setEditingCoach(coach);
@@ -99,10 +234,22 @@ export default function HuanLuyenVienPage() {
     setOpen(true);
   }
 
+  /*
+   * =========================
+   * VIEW
+   * =========================
+   */
+
   function handleOpenView(coach: Coach) {
     setSelectedCoach(coach);
     setViewOpen(true);
   }
+
+  /*
+   * =========================
+   * SAVE
+   * =========================
+   */
 
   function handleSave() {
     if (!newCoach.name.trim()) {
@@ -112,6 +259,21 @@ export default function HuanLuyenVienPage() {
 
     if (!newCoach.phone.trim()) {
       alert("Vui lòng nhập số điện thoại.");
+      return;
+    }
+
+    if (!newCoach.birthDate) {
+      alert("Vui lòng chọn ngày sinh.");
+      return;
+    }
+
+    if (!newCoach.gender) {
+      alert("Vui lòng chọn giới tính.");
+      return;
+    }
+
+    if (!newCoach.joinDate) {
+      alert("Vui lòng chọn ngày tham gia.");
       return;
     }
 
@@ -132,7 +294,15 @@ export default function HuanLuyenVienPage() {
     }
 
     setOpen(false);
+    setEditingCoach(null);
+    resetForm();
   }
+
+  /*
+   * =========================
+   * DELETE
+   * =========================
+   */
 
   function handleDelete(coach: Coach) {
     const confirmDelete = window.confirm(
@@ -146,72 +316,419 @@ export default function HuanLuyenVienPage() {
     alert("Đã xóa huấn luyện viên.");
   }
 
+  /*
+   * =========================
+   * CLASSES
+   * =========================
+   */
+
   function getCoachClasses(coachName: string) {
     return classes.filter((classItem) => classItem.coach === coachName);
   }
 
-  return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Huấn luyện viên</h1>
+  /*
+   * =========================
+   * FORM UI
+   * =========================
+   */
 
-          <p className="mt-1 text-sm text-slate-500">
-            Quản lý thông tin huấn luyện viên của CLB
+  function CoachForm() {
+    return (
+      <div className="max-h-[70vh] overflow-y-auto pr-2">
+        <div className="space-y-6 py-2">
+          {/* THÔNG TIN CÁ NHÂN */}
+
+          <div>
+            <div className="mb-4">
+              <h3 className="font-semibold text-slate-900">
+                Thông tin cá nhân
+              </h3>
+
+              <p className="mt-1 text-xs text-muted-foreground">
+                Thông tin cơ bản của huấn luyện viên.
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* NAME */}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Họ và tên <span className="text-red-500">*</span>
+                </label>
+
+                <Input
+                  value={newCoach.name}
+                  onChange={(e) =>
+                    setNewCoach({
+                      ...newCoach,
+                      name: e.target.value,
+                    })
+                  }
+                  placeholder="Nguyễn Văn A"
+                />
+              </div>
+
+              {/* PHONE */}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Số điện thoại <span className="text-red-500">*</span>
+                </label>
+
+                <Input
+                  type="tel"
+                  value={newCoach.phone}
+                  onChange={(e) =>
+                    setNewCoach({
+                      ...newCoach,
+                      phone: e.target.value,
+                    })
+                  }
+                  placeholder="0901 234 567"
+                />
+              </div>
+
+              {/* BIRTH DATE */}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Ngày sinh <span className="text-red-500">*</span>
+                </label>
+
+                <div className="relative">
+                  <CalendarDays className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+                  <Input
+                    type="date"
+                    value={newCoach.birthDate}
+                    onChange={(e) =>
+                      setNewCoach({
+                        ...newCoach,
+                        birthDate: e.target.value,
+                      })
+                    }
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+
+              {/* GENDER */}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Giới tính <span className="text-red-500">*</span>
+                </label>
+
+                <Select
+                  value={newCoach.gender}
+                  onValueChange={(value) =>
+                    setNewCoach({
+                      ...newCoach,
+                      gender: value ?? "",
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Chọn giới tính" />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    <SelectItem value="Nam">Nam</SelectItem>
+
+                    <SelectItem value="Nữ">Nữ</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          {/* THÔNG TIN CHUYÊN MÔN */}
+
+          <div className="border-t pt-5">
+            <div className="mb-4">
+              <h3 className="font-semibold text-slate-900">
+                Thông tin chuyên môn
+              </h3>
+
+              <p className="mt-1 text-xs text-muted-foreground">
+                Chuyên môn và trạng thái làm việc tại CLB.
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* SPECIALIZATION */}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Chuyên môn</label>
+
+                <Select
+                  value={newCoach.specialization}
+                  onValueChange={(value) =>
+                    setNewCoach({
+                      ...newCoach,
+                      specialization: value ?? "",
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Chọn chuyên môn" />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    {specializationOptions.map((item) => (
+                      <SelectItem key={item} value={item}>
+                        {item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* JOIN DATE */}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">
+                  Ngày tham gia <span className="text-red-500">*</span>
+                </label>
+
+                <div className="relative">
+                  <CalendarDays className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+                  <Input
+                    type="date"
+                    value={newCoach.joinDate}
+                    onChange={(e) =>
+                      setNewCoach({
+                        ...newCoach,
+                        joinDate: e.target.value,
+                      })
+                    }
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+
+              {/* STATUS */}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Trạng thái</label>
+
+                <Select
+                  value={newCoach.status}
+                  onValueChange={(value) =>
+                    setNewCoach({
+                      ...newCoach,
+                      status: value ?? "",
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    {statusOptions.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {status}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* NOTE */}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Ghi chú</label>
+
+                <Input
+                  value={newCoach.note}
+                  onChange={(e) =>
+                    setNewCoach({
+                      ...newCoach,
+                      note: e.target.value,
+                    })
+                  }
+                  placeholder="Ghi chú..."
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* =========================
+          HERO
+      ========================= */}
+
+      <div className="relative overflow-hidden rounded-2xl bg-slate-950 p-6 text-white shadow-sm md:p-8">
+        <div className="relative z-10">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-medium text-slate-200">
+                <Users className="h-3.5 w-3.5" />
+                Quản lý đội ngũ HLV
+              </div>
+
+              <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
+                Huấn luyện viên
+              </h1>
+
+              <p className="mt-2 max-w-2xl text-sm text-slate-300 md:text-base">
+                Quản lý thông tin, chuyên môn, trạng thái và các lớp đang phụ
+                trách.
+              </p>
+            </div>
+
+            <div className="hidden h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/10 md:flex">
+              <UserRound className="h-10 w-10" />
+            </div>
+          </div>
+        </div>
+
+        <div className="absolute -right-12 -top-16 h-48 w-48 rounded-full bg-white/5" />
+
+        <div className="absolute -bottom-24 right-32 h-48 w-48 rounded-full bg-white/5" />
+      </div>
+
+      {/* =========================
+          STATS
+      ========================= */}
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-2xl border bg-card p-5 shadow-sm">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Tổng HLV</p>
+
+              <p className="mt-2 text-3xl font-bold text-slate-900">
+                {stats.total}
+              </p>
+
+              <p className="mt-1 text-xs text-muted-foreground">
+                Đội ngũ HLV trong CLB
+              </p>
+            </div>
+
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100">
+              <Users className="h-5 w-5 text-slate-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border bg-card p-5 shadow-sm">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Đang hoạt động</p>
+
+              <p className="mt-2 text-3xl font-bold text-emerald-600">
+                {stats.active}
+              </p>
+
+              <p className="mt-1 text-xs text-muted-foreground">
+                Đang giảng dạy
+              </p>
+            </div>
+
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50">
+              <UserRound className="h-5 w-5 text-emerald-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border bg-card p-5 shadow-sm">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Tạm nghỉ</p>
+
+              <p className="mt-2 text-3xl font-bold text-slate-600">
+                {stats.inactive}
+              </p>
+
+              <p className="mt-1 text-xs text-muted-foreground">
+                HLV tạm thời nghỉ
+              </p>
+            </div>
+
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100">
+              <UserRound className="h-5 w-5 text-slate-500" />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border bg-card p-5 shadow-sm">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Chuyên môn Kyorugi
+              </p>
+
+              <p className="mt-2 text-3xl font-bold text-red-600">
+                {stats.kyorugi}
+              </p>
+
+              <p className="mt-1 text-xs text-muted-foreground">
+                HLV đối kháng
+              </p>
+            </div>
+
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50">
+              <Award className="h-5 w-5 text-red-600" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* =========================
+          ACTION BAR
+      ========================= */}
+
+      <div className="flex flex-col gap-3 rounded-2xl border bg-card p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-semibold text-slate-900">
+            Danh sách huấn luyện viên
+          </h2>
+
+          <p className="mt-1 text-sm text-muted-foreground">
+            Hiển thị {filteredCoaches.length} / {coaches.length} HLV
           </p>
         </div>
 
         {!isStaff && (
-          <Button onClick={handleOpenAdd}>
-            <Plus size={18} />
-            <span className="ml-2">Thêm HLV</span>
+          <Button onClick={handleOpenAdd} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Thêm HLV
           </Button>
         )}
       </div>
 
-      {/* Stats */}
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border bg-white p-5">
-          <p className="text-sm text-slate-500">Tổng HLV</p>
+      {/* =========================
+          FILTER
+      ========================= */}
 
-          <p className="mt-2 text-2xl font-bold">{coaches.length}</p>
-        </div>
+      <div className="rounded-2xl border bg-card p-5 shadow-sm">
+        <div className="mb-4">
+          <h3 className="font-semibold text-slate-900">Tìm kiếm & bộ lọc</h3>
 
-        <div className="rounded-xl border bg-white p-5">
-          <p className="text-sm text-slate-500">Đang hoạt động</p>
-
-          <p className="mt-2 text-2xl font-bold">
-            {
-              coaches.filter((coach) => coach.status === "Đang hoạt động")
-                .length
-            }
+          <p className="mt-1 text-xs text-muted-foreground">
+            Tìm theo tên, số điện thoại hoặc lọc theo trạng thái.
           </p>
         </div>
 
-        <div className="rounded-xl border bg-white p-5">
-          <p className="text-sm text-slate-500">Tạm nghỉ</p>
-
-          <p className="mt-2 text-2xl font-bold">
-            {coaches.filter((coach) => coach.status === "Tạm nghỉ").length}
-          </p>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="mb-4 rounded-xl border bg-white p-4">
-        <div className="flex flex-col gap-3 md:flex-row">
-          <div className="relative flex-1">
-            <Search
-              size={18}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            />
+        <div className="grid gap-3 md:grid-cols-[1fr_240px]">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Tìm tên hoặc số điện thoại..."
-              className="pl-10"
+              className="h-11 pl-9"
             />
           </div>
 
@@ -219,7 +736,7 @@ export default function HuanLuyenVienPage() {
             value={statusFilter}
             onValueChange={(value) => setStatusFilter(value ?? "all")}
           >
-            <SelectTrigger className="w-full md:w-52">
+            <SelectTrigger className="h-11">
               <SelectValue placeholder="Lọc trạng thái" />
             </SelectTrigger>
 
@@ -234,110 +751,192 @@ export default function HuanLuyenVienPage() {
             </SelectContent>
           </Select>
         </div>
+
+        {(search || statusFilter !== "all") && (
+          <div className="mt-4 flex items-center justify-between border-t pt-4">
+            <p className="text-sm text-muted-foreground">Đang áp dụng bộ lọc</p>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("all");
+              }}
+            >
+              <X className="mr-2 h-4 w-4" />
+              Xóa bộ lọc
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-xl border bg-white">
+      {/* =========================
+          TABLE
+      ========================= */}
+
+      <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b bg-slate-50">
-              <tr>
-                <th className="px-4 py-3 text-left">STT</th>
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-50 hover:bg-slate-50">
+                <TableHead className="w-[60px]">STT</TableHead>
 
-                <th className="px-4 py-3 text-left">Huấn luyện viên</th>
+                <TableHead className="min-w-[240px]">Huấn luyện viên</TableHead>
 
-                <th className="px-4 py-3 text-left">Số điện thoại</th>
+                <TableHead className="min-w-[150px]">Số điện thoại</TableHead>
 
-                <th className="px-4 py-3 text-left">Chuyên môn</th>
+                <TableHead className="min-w-[150px]">Chuyên môn</TableHead>
 
-                <th className="px-4 py-3 text-left">Ngày tham gia</th>
+                <TableHead className="min-w-[150px]">Ngày tham gia</TableHead>
 
-                <th className="px-4 py-3 text-left">Trạng thái</th>
+                <TableHead className="min-w-[150px]">Trạng thái</TableHead>
 
-                <th className="px-4 py-3 text-right">Thao tác</th>
-              </tr>
-            </thead>
+                <TableHead className="min-w-[150px] text-right">
+                  Thao tác
+                </TableHead>
+              </TableRow>
+            </TableHeader>
 
-            <tbody>
-              {filteredCoaches.map((coach, index) => (
-                <tr key={coach.id} className="border-b last:border-0">
-                  <td className="px-4 py-4">{index + 1}</td>
+            <TableBody>
+              {filteredCoaches.length > 0 ? (
+                filteredCoaches.map((coach, index) => (
+                  <TableRow key={coach.id} className="hover:bg-slate-50/70">
+                    {/* STT */}
 
-                  <td className="px-4 py-4">
-                    <div className="font-medium">{coach.name}</div>
+                    <TableCell className="font-medium text-muted-foreground">
+                      {index + 1}
+                    </TableCell>
 
-                    <div className="text-xs text-slate-500">
-                      {coach.gender || "Chưa cập nhật"}
-                    </div>
-                  </td>
+                    {/* COACH */}
 
-                  <td className="px-4 py-4">{coach.phone}</td>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
+                          {getInitials(coach.name)}
+                        </div>
 
-                  <td className="px-4 py-4">
-                    <Badge variant="outline">{coach.specialization}</Badge>
-                  </td>
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-slate-900">
+                            {coach.name}
+                          </p>
 
-                  <td className="px-4 py-4">{coach.joinDate || "-"}</td>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {coach.gender || "Chưa cập nhật"}
+                          </p>
+                        </div>
+                      </div>
+                    </TableCell>
 
-                  <td className="px-4 py-4">
-                    <Badge
-                      variant={
-                        coach.status === "Đang hoạt động"
-                          ? "default"
-                          : "secondary"
-                      }
-                    >
-                      {coach.status}
-                    </Badge>
-                  </td>
+                    {/* PHONE */}
 
-                  <td className="px-4 py-4">
-                    <div className="flex justify-end gap-2">
-                      <Button
+                    <TableCell>{coach.phone}</TableCell>
+
+                    {/* SPECIALIZATION */}
+
+                    <TableCell>
+                      <Badge
                         variant="outline"
-                        size="sm"
-                        onClick={() => handleOpenView(coach)}
+                        className={getSpecializationClass(coach.specialization)}
                       >
-                        <Eye size={16} />
-                      </Button>
+                        {coach.specialization}
+                      </Badge>
+                    </TableCell>
 
-                      {!isStaff && (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleOpenEdit(coach)}
-                          >
-                            <Pencil size={16} />
-                          </Button>
+                    {/* JOIN DATE */}
 
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDelete(coach)}
-                          >
-                            <Trash2 size={16} className="text-red-500" />
-                          </Button>
-                        </>
-                      )}
+                    <TableCell>{coach.joinDate || "-"}</TableCell>
+
+                    {/* STATUS */}
+
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={getStatusClass(coach.status)}
+                      >
+                        {coach.status}
+                      </Badge>
+                    </TableCell>
+
+                    {/* ACTION */}
+
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Xem chi tiết"
+                          onClick={() => handleOpenView(coach)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+
+                        {!isStaff && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Chỉnh sửa"
+                              onClick={() => handleOpenEdit(coach)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Xóa"
+                              onClick={() => handleDelete(coach)}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-40 text-center">
+                    <div className="flex flex-col items-center justify-center">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100">
+                        <Users className="h-6 w-6 text-slate-400" />
+                      </div>
+
+                      <p className="mt-3 font-medium text-slate-700">
+                        Không tìm thấy HLV
+                      </p>
+
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Thử thay đổi từ khóa hoặc bộ lọc.
+                      </p>
                     </div>
-                  </td>
-                </tr>
-              ))}
-
-              {filteredCoaches.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="py-10 text-center text-slate-500">
-                    Không tìm thấy huấn luyện viên.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="flex flex-col gap-2 border-t px-5 py-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <span>
+            Hiển thị{" "}
+            <strong className="text-slate-900">{filteredCoaches.length}</strong>{" "}
+            / {coaches.length} HLV
+          </span>
+
+          <span>
+            Đang hoạt động:{" "}
+            <strong className="text-emerald-600">{stats.active}</strong>
+          </span>
         </div>
       </div>
 
-      {/* Add / Edit Dialog */}
+      {/* =========================
+          ADD / EDIT
+      ========================= */}
+
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -346,186 +945,17 @@ export default function HuanLuyenVienPage() {
                 ? "Chỉnh sửa huấn luyện viên"
                 : "Thêm huấn luyện viên"}
             </DialogTitle>
+
+            <DialogDescription>
+              {editingCoach
+                ? "Cập nhật thông tin HLV."
+                : "Nhập thông tin HLV mới vào hệ thống."}
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            {/* Name */}
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Họ và tên
-              </label>
+          <CoachForm />
 
-              <Input
-                value={newCoach.name}
-                onChange={(e) =>
-                  setNewCoach({
-                    ...newCoach,
-                    name: e.target.value,
-                  })
-                }
-                placeholder="Nhập họ tên..."
-              />
-            </div>
-
-            {/* Phone */}
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Số điện thoại
-              </label>
-
-              <Input
-                value={newCoach.phone}
-                onChange={(e) =>
-                  setNewCoach({
-                    ...newCoach,
-                    phone: e.target.value,
-                  })
-                }
-                placeholder="Nhập số điện thoại..."
-              />
-            </div>
-
-            {/* Birth Date */}
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Ngày sinh
-              </label>
-
-              <Input
-                type="text"
-                value={newCoach.birthDate}
-                onChange={(e) =>
-                  setNewCoach({
-                    ...newCoach,
-                    birthDate: e.target.value,
-                  })
-                }
-                placeholder="DD/MM/YYYY"
-              />
-            </div>
-
-            {/* Gender */}
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Giới tính
-              </label>
-
-              <Select
-                value={newCoach.gender}
-                onValueChange={(value) =>
-                  setNewCoach({
-                    ...newCoach,
-                    gender: value ?? "",
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn giới tính" />
-                </SelectTrigger>
-
-                <SelectContent>
-                  <SelectItem value="Nam">Nam</SelectItem>
-
-                  <SelectItem value="Nữ">Nữ</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Specialization */}
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Chuyên môn
-              </label>
-
-              <Select
-                value={newCoach.specialization}
-                onValueChange={(value) =>
-                  setNewCoach({
-                    ...newCoach,
-                    specialization: value ?? "",
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn chuyên môn" />
-                </SelectTrigger>
-
-                <SelectContent>
-                  {specializationOptions.map((item) => (
-                    <SelectItem key={item} value={item}>
-                      {item}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Join Date */}
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Ngày tham gia
-              </label>
-
-              <Input
-                type="text"
-                value={newCoach.joinDate}
-                onChange={(e) =>
-                  setNewCoach({
-                    ...newCoach,
-                    joinDate: e.target.value,
-                  })
-                }
-                placeholder="DD/MM/YYYY"
-              />
-            </div>
-
-            {/* Status */}
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Trạng thái
-              </label>
-
-              <Select
-                value={newCoach.status}
-                onValueChange={(value) =>
-                  setNewCoach({
-                    ...newCoach,
-                    status: value ?? "",
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn trạng thái" />
-                </SelectTrigger>
-
-                <SelectContent>
-                  {statusOptions.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {status}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Note */}
-            <div className="md:col-span-2">
-              <label className="mb-2 block text-sm font-medium">Ghi chú</label>
-
-              <Input
-                value={newCoach.note}
-                onChange={(e) =>
-                  setNewCoach({
-                    ...newCoach,
-                    note: e.target.value,
-                  })
-                }
-                placeholder="Ghi chú..."
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
               Hủy
             </Button>
@@ -533,101 +963,142 @@ export default function HuanLuyenVienPage() {
             <Button onClick={handleSave}>
               {editingCoach ? "Lưu thay đổi" : "Thêm HLV"}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* View Dialog */}
+      {/* =========================
+          VIEW
+      ========================= */}
+
       <Dialog open={viewOpen} onOpenChange={setViewOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>Thông tin huấn luyện viên</DialogTitle>
+
+            <DialogDescription>
+              Chi tiết thông tin và các lớp đang phụ trách.
+            </DialogDescription>
           </DialogHeader>
 
           {selectedCoach && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-4 rounded-xl bg-slate-50 p-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-white">
-                  <Users size={22} />
+            <div className="space-y-5">
+              {/* PROFILE */}
+
+              <div className="flex items-center gap-4 rounded-2xl bg-slate-50 p-4">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-900 text-lg font-bold text-white">
+                  {getInitials(selectedCoach.name)}
                 </div>
 
-                <div>
-                  <p className="font-semibold">{selectedCoach.name}</p>
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-slate-900">
+                    {selectedCoach.name}
+                  </h3>
 
-                  <p className="text-sm text-slate-500">
+                  <p className="mt-1 text-sm text-muted-foreground">
                     {selectedCoach.specialization}
                   </p>
+
+                  <div className="mt-2">
+                    <Badge
+                      variant="outline"
+                      className={getStatusClass(selectedCoach.status)}
+                    >
+                      {selectedCoach.status}
+                    </Badge>
+                  </div>
                 </div>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <p className="text-xs text-slate-500">Số điện thoại</p>
+              {/* BASIC INFO */}
 
-                  <p className="font-medium">{selectedCoach.phone}</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs text-muted-foreground">Số điện thoại</p>
+
+                  <p className="mt-1 font-medium">{selectedCoach.phone}</p>
                 </div>
 
                 <div>
-                  <p className="text-xs text-slate-500">Giới tính</p>
+                  <p className="text-xs text-muted-foreground">Giới tính</p>
 
-                  <p className="font-medium">{selectedCoach.gender || "-"}</p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-slate-500">Ngày sinh</p>
-
-                  <p className="font-medium">
-                    {selectedCoach.birthDate || "-"}
+                  <p className="mt-1 font-medium">
+                    {selectedCoach.gender || "Chưa cập nhật"}
                   </p>
                 </div>
 
                 <div>
-                  <p className="text-xs text-slate-500">Ngày tham gia</p>
+                  <p className="text-xs text-muted-foreground">Ngày sinh</p>
 
-                  <p className="font-medium">{selectedCoach.joinDate || "-"}</p>
+                  <p className="mt-1 font-medium">
+                    {selectedCoach.birthDate || "Chưa cập nhật"}
+                  </p>
                 </div>
 
                 <div>
-                  <p className="text-xs text-slate-500">Trạng thái</p>
+                  <p className="text-xs text-muted-foreground">Ngày tham gia</p>
 
-                  <Badge>{selectedCoach.status}</Badge>
+                  <p className="mt-1 font-medium">
+                    {selectedCoach.joinDate || "Chưa cập nhật"}
+                  </p>
                 </div>
               </div>
 
-              <div>
-                <p className="text-xs text-slate-500">Ghi chú</p>
+              {/* NOTE */}
 
-                <p className="mt-1 text-sm">
-                  {selectedCoach.note || "Không có"}
+              <div>
+                <p className="text-xs text-muted-foreground">Ghi chú</p>
+
+                <p className="mt-1 rounded-xl bg-slate-50 p-3 text-sm">
+                  {selectedCoach.note || "Không có ghi chú"}
                 </p>
               </div>
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Lớp đang phụ trách</p>
 
-                    <p className="text-xs text-slate-500">
-                      {getCoachClasses(selectedCoach.name).length} lớp
+              {/* CLASSES */}
+
+              <div className="border-t pt-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-slate-900">
+                      Lớp đang phụ trách
+                    </h3>
+
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Danh sách lớp được phân công cho HLV.
                     </p>
                   </div>
+
+                  <Badge variant="secondary">
+                    {getCoachClasses(selectedCoach.name).length} lớp
+                  </Badge>
                 </div>
 
                 {getCoachClasses(selectedCoach.name).length === 0 ? (
-                  <div className="rounded-lg border border-dashed p-4 text-center text-sm text-slate-500">
-                    HLV chưa phụ trách lớp nào.
+                  <div className="rounded-xl border border-dashed p-6 text-center">
+                    <Users className="mx-auto h-6 w-6 text-slate-400" />
+
+                    <p className="mt-2 text-sm font-medium text-slate-700">
+                      Chưa phụ trách lớp nào
+                    </p>
+
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      HLV hiện chưa được phân công lớp.
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-2">
                     {getCoachClasses(selectedCoach.name).map((classItem) => (
                       <div
                         key={classItem.id}
-                        className="rounded-lg border bg-slate-50 p-3"
+                        className="rounded-xl border bg-slate-50 p-4"
                       >
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div>
-                            <p className="font-medium">{classItem.name}</p>
+                            <p className="font-semibold text-slate-900">
+                              {classItem.name}
+                            </p>
 
-                            <p className="text-xs text-slate-500">
+                            <p className="mt-1 text-xs text-muted-foreground">
                               {classItem.schedule} · {classItem.time}
                             </p>
                           </div>
@@ -649,6 +1120,12 @@ export default function HuanLuyenVienPage() {
               </div>
             </div>
           )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewOpen(false)}>
+              Đóng
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

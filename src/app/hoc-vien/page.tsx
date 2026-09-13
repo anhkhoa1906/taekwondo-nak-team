@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { Eye, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
 import { useStudents, type Student } from "@/context/student-context";
+import { useClasses } from "@/context/class-context";
+import { BELT_NAMES } from "@/context/belt-context";
 import { useRole } from "@/hooks/use-role";
 import {
   Dialog,
@@ -47,21 +49,41 @@ type NewStudent = {
   note: string;
 };
 
-const beltOptions = ["Trắng", "Vàng", "Xanh", "Đỏ", "Đen"];
-const classOptions = ["Lớp A", "Lớp B", "Lớp C"];
-
 function getBeltClass(belt: string) {
   switch (belt) {
     case "Trắng":
-      return "bg-slate-100 text-slate-700 border-slate-200";
+      return "bg-slate-50 text-slate-700 border-slate-300";
+
+    case "Trắng 1 vạch":
+      return "bg-slate-100 text-slate-700 border-slate-300";
+
+    case "Trắng 2 vạch":
+      return "bg-slate-200 text-slate-700 border-slate-300";
+
     case "Vàng":
-      return "bg-yellow-100 text-yellow-700 border-yellow-200";
-    case "Xanh":
-      return "bg-blue-100 text-blue-700 border-blue-200";
-    case "Đỏ":
-      return "bg-red-100 text-red-700 border-red-200";
+      return "bg-yellow-100 text-yellow-700 border-yellow-300";
+
+    case "Xanh lá":
+      return "bg-green-100 text-green-700 border-green-300";
+
+    case "Xanh dương":
+      return "bg-blue-100 text-blue-700 border-blue-300";
+
+    case "Đỏ cấp 4":
+      return "bg-red-100 text-red-700 border-red-300";
+
+    case "Đỏ cấp 3":
+      return "bg-red-200 text-red-700 border-red-400";
+
+    case "Đỏ cấp 2":
+      return "bg-red-300 text-red-800 border-red-500";
+
+    case "Đỏ cấp 1":
+      return "bg-red-400 text-red-900 border-red-600";
+
     case "Đen":
       return "bg-slate-800 text-white border-slate-800";
+
     default:
       return "";
   }
@@ -77,6 +99,7 @@ function getStatusClass(status: string) {
 
 export default function StudentsPage() {
   const { students, addStudent, updateStudent, deleteStudent } = useStudents();
+  const { classes } = useClasses();
   const { isStaff } = useRole();
 
   const [search, setSearch] = useState("");
@@ -428,9 +451,9 @@ export default function StudentsPage() {
                     </SelectTrigger>
 
                     <SelectContent>
-                      {classOptions.map((item) => (
-                        <SelectItem key={item} value={item}>
-                          {item}
+                      {classes.map((item) => (
+                        <SelectItem key={item.id} value={item.name}>
+                          {item.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -457,9 +480,9 @@ export default function StudentsPage() {
                     </SelectTrigger>
 
                     <SelectContent>
-                      {beltOptions.map((item) => (
-                        <SelectItem key={item} value={item}>
-                          {item}
+                      {BELT_NAMES.map((belt) => (
+                        <SelectItem key={belt} value={belt}>
+                          {belt}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -661,9 +684,9 @@ export default function StudentsPage() {
                 </SelectTrigger>
 
                 <SelectContent>
-                  {classOptions.map((item) => (
-                    <SelectItem key={item} value={item}>
-                      {item}
+                  {classes.map((item) => (
+                    <SelectItem key={item.id} value={item.name}>
+                      {item.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -688,11 +711,10 @@ export default function StudentsPage() {
                 <SelectTrigger>
                   <SelectValue placeholder="Chọn cấp đai" />
                 </SelectTrigger>
-
                 <SelectContent>
-                  {beltOptions.map((item) => (
-                    <SelectItem key={item} value={item}>
-                      {item}
+                  {BELT_NAMES.map((belt) => (
+                    <SelectItem key={belt} value={belt}>
+                      {belt}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -776,7 +798,7 @@ export default function StudentsPage() {
             <SelectContent>
               <SelectItem value="all">Tất cả cấp đai</SelectItem>
 
-              {beltOptions.map((belt) => (
+              {BELT_NAMES.map((belt) => (
                 <SelectItem key={belt} value={belt}>
                   Đai {belt}
                 </SelectItem>
@@ -796,9 +818,9 @@ export default function StudentsPage() {
             <SelectContent>
               <SelectItem value="all">Tất cả lớp</SelectItem>
 
-              {classOptions.map((item) => (
-                <SelectItem key={item} value={item}>
-                  {item}
+              {classes.map((item) => (
+                <SelectItem key={item.id} value={item.name}>
+                  {item.name}
                 </SelectItem>
               ))}
             </SelectContent>

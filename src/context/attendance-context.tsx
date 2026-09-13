@@ -19,11 +19,20 @@ export type AttendanceRecord = {
 
 type AttendanceData = Record<string, Record<number, AttendanceRecord>>;
 
+type AttendanceSummary = {
+  total: number;
+  present: number;
+  absent: number;
+  excused: number;
+};
+
 type AttendanceContextType = {
   getAttendance: (
     date: string,
     className: string,
   ) => Record<number, AttendanceRecord>;
+
+  getTodayAttendanceSummary: () => AttendanceSummary;
 
   saveAttendance: (
     date: string,
@@ -185,10 +194,43 @@ export function AttendanceProvider({
     [club?.id],
   );
 
+  const getTodayAttendanceSummary = useCallback(() => {
+    const today = new Date().toISOString().slice(0, 10);
+
+    let total = 0;
+    let present = 0;
+    let absent = 0;
+    let excused = 0;
+
+    Object.entries(attendanceData).forEach(([key, records]) => {
+      if (!key.startsWith(`${today}__`)) return;
+
+      Object.values(records).forEach((record) => {
+        total++;
+
+        if (record.status === "Có mặt") {
+          present++;
+        } else if (record.status === "Vắng") {
+          absent++;
+        } else if (record.status === "Có phép") {
+          excused++;
+        }
+      });
+    });
+
+    return {
+      total,
+      present,
+      absent,
+      excused,
+    };
+  }, [attendanceData]);
+
   return (
     <AttendanceContext.Provider
       value={{
         getAttendance,
+        getTodayAttendanceSummary,
         saveAttendance,
       }}
     >
