@@ -1,11 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Eye, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+
+import {
+  Camera,
+  Eye,
+  ImagePlus,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+  Users,
+  X,
+} from "lucide-react";
+
 import { useStudents, type Student } from "@/context/student-context";
+
 import { useClasses } from "@/context/class-context";
 import { BELT_NAMES } from "@/context/belt-context";
 import { useRole } from "@/hooks/use-role";
+
+import { createClient } from "@/lib/supabase/client";
+
 import {
   Dialog,
   DialogContent,
@@ -36,6 +53,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+// =====================================================
+// TYPES
+// =====================================================
+
 type NewStudent = {
   name: string;
   birthDate: string;
@@ -47,7 +68,30 @@ type NewStudent = {
   belt: string;
   status: string;
   note: string;
+  avatarUrl: string;
 };
+
+// =====================================================
+// DEFAULT FORM
+// =====================================================
+
+const EMPTY_STUDENT: NewStudent = {
+  name: "",
+  birthDate: "",
+  gender: "",
+  phone: "",
+  address: "",
+  joinDate: "",
+  className: "",
+  belt: "",
+  status: "Đang tập",
+  note: "",
+  avatarUrl: "",
+};
+
+// =====================================================
+// BELT
+// =====================================================
 
 function getBeltClass(belt: string) {
   switch (belt) {
@@ -89,6 +133,10 @@ function getBeltClass(belt: string) {
   }
 }
 
+// =====================================================
+// STATUS
+// =====================================================
+
 function getStatusClass(status: string) {
   if (status === "Đang tập") {
     return "bg-emerald-100 text-emerald-700 border-emerald-200";
@@ -97,33 +145,94 @@ function getStatusClass(status: string) {
   return "bg-red-100 text-red-700 border-red-200";
 }
 
+// =====================================================
+// AVATAR
+// =====================================================
+
+function Avatar({
+  name,
+  src,
+  size = "md",
+}: {
+  name: string;
+  src?: string;
+  size?: "sm" | "md" | "lg" | "xl";
+}) {
+  const initials =
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(-2)
+      .map((item) => item.charAt(0))
+      .join("")
+      .toUpperCase() || "HV";
+
+  const sizeClass =
+    size === "sm"
+      ? "h-9 w-9 text-[10px]"
+      : size === "lg"
+        ? "h-24 w-24 text-xl"
+        : size === "xl"
+          ? "h-32 w-32 text-2xl"
+          : "h-11 w-11 text-xs";
+
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        className={`${sizeClass} shrink-0 rounded-full object-cover ring-2 ring-white shadow-md`}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`${sizeClass} flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 to-slate-950 font-black text-white shadow-md`}
+    >
+      {initials}
+    </div>
+  );
+}
+
+// =====================================================
+// PAGE
+// =====================================================
+
 export default function StudentsPage() {
   const { students, addStudent, updateStudent, deleteStudent } = useStudents();
+
   const { classes } = useClasses();
+
   const { isStaff } = useRole();
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [search, setSearch] = useState("");
+
   const [beltFilter, setBeltFilter] = useState("all");
+
   const [classFilter, setClassFilter] = useState("all");
+
   const [statusFilter, setStatusFilter] = useState("all");
 
   const [open, setOpen] = useState(false);
+
   const [viewOpen, setViewOpen] = useState(false);
+
   const [editOpen, setEditOpen] = useState(false);
+
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
 
-  const [newStudent, setNewStudent] = useState<NewStudent>({
-    name: "",
-    birthDate: "",
-    gender: "",
-    phone: "",
-    address: "",
-    joinDate: "",
-    className: "",
-    belt: "",
-    status: "Đang tập",
-    note: "",
-  });
+  const [newStudent, setNewStudent] = useState<NewStudent>(EMPTY_STUDENT);
+
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const [avatarError, setAvatarError] = useState("");
+
+  // ===================================================
+  // FILTER
+  // ===================================================
 
   const filteredStudents = useMemo(() => {
     return students.filter((student) => {
@@ -145,26 +254,18 @@ export default function StudentsPage() {
     });
   }, [students, search, beltFilter, classFilter, statusFilter]);
 
+  // ===================================================
+  // ADD
+  // ===================================================
+
   function handleOpenAddStudent() {
     setSelectedStudent(null);
-
-    setNewStudent({
-      name: "",
-      birthDate: "",
-      gender: "",
-      phone: "",
-      address: "",
-      joinDate: "",
-      className: "",
-      belt: "",
-      status: "Đang tập",
-      note: "",
-    });
-
+    setNewStudent(EMPTY_STUDENT);
+    setAvatarError("");
     setOpen(true);
   }
 
-  function handleAddStudent() {
+  async function handleAddStudent() {
     if (
       !newStudent.name ||
       !newStudent.birthDate ||
@@ -189,25 +290,18 @@ export default function StudentsPage() {
       address: newStudent.address,
       joinDate: newStudent.joinDate,
       note: newStudent.note,
+      avatarUrl: newStudent.avatarUrl,
     };
 
-    addStudent(student);
+    await addStudent(student);
 
-    setNewStudent({
-      name: "",
-      birthDate: "",
-      gender: "",
-      phone: "",
-      address: "",
-      joinDate: "",
-      className: "",
-      belt: "",
-      status: "Đang tập",
-      note: "",
-    });
-
+    setNewStudent(EMPTY_STUDENT);
     setOpen(false);
   }
+
+  // ===================================================
+  // EDIT
+  // ===================================================
 
   function handleEditStudent(student: Student) {
     setSelectedStudent(student);
@@ -223,12 +317,14 @@ export default function StudentsPage() {
       belt: student.belt,
       status: student.status,
       note: student.note,
+      avatarUrl: student.avatarUrl,
     });
 
+    setAvatarError("");
     setEditOpen(true);
   }
 
-  function handleUpdateStudent() {
+  async function handleUpdateStudent() {
     if (!selectedStudent) return;
 
     if (
@@ -243,7 +339,7 @@ export default function StudentsPage() {
       return;
     }
 
-    updateStudent({
+    await updateStudent({
       ...selectedStudent,
       name: newStudent.name,
       birthDate: newStudent.birthDate,
@@ -255,13 +351,18 @@ export default function StudentsPage() {
       belt: newStudent.belt,
       status: newStudent.status,
       note: newStudent.note,
+      avatarUrl: newStudent.avatarUrl,
     });
 
     setEditOpen(false);
     setSelectedStudent(null);
   }
 
-  function handleDelete(id: number) {
+  // ===================================================
+  // DELETE
+  // ===================================================
+
+  async function handleDelete(id: number) {
     const student = students.find((item) => item.id === id);
 
     if (!student) return;
@@ -272,16 +373,423 @@ export default function StudentsPage() {
 
     if (!confirmed) return;
 
-    deleteStudent(id);
+    await deleteStudent(id);
   }
+
+  // ===================================================
+  // VIEW
+  // ===================================================
+
   function handleViewStudent(student: Student) {
     setSelectedStudent(student);
     setViewOpen(true);
   }
 
+  // ===================================================
+  // UPLOAD AVATAR
+  // ===================================================
+
+  async function handleAvatarUpload(
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+
+    event.target.value = "";
+
+    if (!file) return;
+
+    setAvatarError("");
+
+    if (file.size > 2 * 1024 * 1024) {
+      setAvatarError("Ảnh không được vượt quá 2MB.");
+      return;
+    }
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setAvatarError("Chỉ hỗ trợ JPG, PNG hoặc WEBP.");
+      return;
+    }
+
+    setUploadingAvatar(true);
+
+    try {
+      const supabase = createClient();
+
+      const extension = file.name.split(".").pop() || "jpg";
+
+      const fileName = `${crypto.randomUUID()}.${extension}`;
+
+      const filePath = `students/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("student-avatars")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: file.type,
+        });
+
+      if (uploadError) {
+        console.error("Lỗi upload avatar:", uploadError);
+
+        setAvatarError("Không thể tải ảnh lên. Vui lòng thử lại.");
+
+        return;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from("student-avatars")
+        .getPublicUrl(filePath);
+
+      const publicUrl = publicUrlData.publicUrl;
+
+      setNewStudent((prev) => ({
+        ...prev,
+        avatarUrl: publicUrl,
+      }));
+    } catch (error) {
+      console.error(error);
+
+      setAvatarError("Có lỗi xảy ra khi tải ảnh.");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
+
+  // ===================================================
+  // REMOVE AVATAR
+  // ===================================================
+
+  function handleRemoveAvatar() {
+    setNewStudent((prev) => ({
+      ...prev,
+      avatarUrl: "",
+    }));
+  }
+
+  // ===================================================
+  // AVATAR SECTION
+  // ===================================================
+
+  function AvatarUploadSection({ editing = false }: { editing?: boolean }) {
+    return (
+      <div className="mb-2 rounded-2xl border bg-slate-50 p-5">
+        <div className="flex flex-col items-center gap-4 sm:flex-row">
+          <div className="relative">
+            <Avatar
+              name={newStudent.name || "Học viên"}
+              src={newStudent.avatarUrl}
+              size="xl"
+            />
+
+            {!newStudent.avatarUrl && (
+              <div className="absolute bottom-0 right-0 flex h-9 w-9 items-center justify-center rounded-full border-4 border-slate-50 bg-slate-900 text-white shadow-md">
+                <Camera className="h-4 w-4" />
+              </div>
+            )}
+          </div>
+
+          <div className="flex-1 text-center sm:text-left">
+            <p className="font-semibold text-slate-900">Ảnh đại diện</p>
+
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              {editing
+                ? "Bạn có thể thay đổi ảnh đại diện bất cứ lúc nào."
+                : "Thêm ảnh để dễ nhận diện học viên trong danh sách."}
+            </p>
+
+            <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={uploadingAvatar}
+                onClick={() => fileInputRef.current?.click()}
+                className="gap-2 rounded-xl"
+              >
+                {uploadingAvatar ? (
+                  <>
+                    <Upload className="h-4 w-4 animate-pulse" />
+                    Đang tải...
+                  </>
+                ) : (
+                  <>
+                    <ImagePlus className="h-4 w-4" />
+                    {newStudent.avatarUrl ? "Đổi ảnh" : "Thêm ảnh"}
+                  </>
+                )}
+              </Button>
+
+              {newStudent.avatarUrl && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={uploadingAvatar}
+                  onClick={handleRemoveAvatar}
+                  className="gap-2 rounded-xl text-red-600 hover:bg-red-50 hover:text-red-700"
+                >
+                  <X className="h-4 w-4" />
+                  Xóa ảnh
+                </Button>
+              )}
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={handleAvatarUpload}
+            />
+
+            <p className="mt-2 text-[11px] text-slate-400">
+              JPG, PNG, WEBP · tối đa 2MB
+            </p>
+
+            {avatarError && (
+              <p className="mt-2 text-xs font-medium text-red-600">
+                {avatarError}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ===================================================
+  // FORM
+  // ===================================================
+
+  function renderStudentFormFields() {
+    return (
+      <>
+        {/* NAME */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">
+            Họ và tên <span className="text-red-500">*</span>
+          </label>
+
+          <Input
+            placeholder="Nguyễn Văn A"
+            value={newStudent.name}
+            onChange={(e) =>
+              setNewStudent({
+                ...newStudent,
+                name: e.target.value,
+              })
+            }
+          />
+        </div>
+
+        {/* BIRTH */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">
+            Ngày sinh <span className="text-red-500">*</span>
+          </label>
+
+          <Input
+            type={editOpen ? "text" : "date"}
+            placeholder={editOpen ? "DD/MM/YYYY" : undefined}
+            value={newStudent.birthDate}
+            onChange={(e) =>
+              setNewStudent({
+                ...newStudent,
+                birthDate: e.target.value,
+              })
+            }
+          />
+        </div>
+
+        {/* GENDER */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">
+            Giới tính <span className="text-red-500">*</span>
+          </label>
+
+          <Select
+            value={newStudent.gender}
+            onValueChange={(value) =>
+              setNewStudent({
+                ...newStudent,
+                gender: value ?? "",
+              })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Chọn giới tính" />
+            </SelectTrigger>
+
+            <SelectContent>
+              <SelectItem value="Nam">Nam</SelectItem>
+
+              <SelectItem value="Nữ">Nữ</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* PHONE */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">
+            Số điện thoại <span className="text-red-500">*</span>
+          </label>
+
+          <Input
+            placeholder="0901 234 567"
+            value={newStudent.phone}
+            onChange={(e) =>
+              setNewStudent({
+                ...newStudent,
+                phone: e.target.value,
+              })
+            }
+          />
+        </div>
+
+        {/* ADDRESS */}
+        <div className="space-y-2 md:col-span-2">
+          <label className="text-sm font-medium">Địa chỉ</label>
+
+          <Input
+            placeholder="Nhập địa chỉ"
+            value={newStudent.address}
+            onChange={(e) =>
+              setNewStudent({
+                ...newStudent,
+                address: e.target.value,
+              })
+            }
+          />
+        </div>
+
+        {/* JOIN DATE */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">
+            Ngày tham gia <span className="text-red-500">*</span>
+          </label>
+
+          <Input
+            type={editOpen ? "text" : "date"}
+            placeholder={editOpen ? "DD/MM/YYYY" : undefined}
+            value={newStudent.joinDate}
+            onChange={(e) =>
+              setNewStudent({
+                ...newStudent,
+                joinDate: e.target.value,
+              })
+            }
+          />
+        </div>
+
+        {/* CLASS */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Lớp học</label>
+
+          <Select
+            value={newStudent.className}
+            onValueChange={(value) =>
+              setNewStudent({
+                ...newStudent,
+                className: value ?? "",
+              })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Chọn lớp học" />
+            </SelectTrigger>
+
+            <SelectContent>
+              {classes.map((item) => (
+                <SelectItem key={item.id} value={item.name}>
+                  {item.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* BELT */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">
+            Cấp đai <span className="text-red-500">*</span>
+          </label>
+
+          <Select
+            value={newStudent.belt}
+            onValueChange={(value) =>
+              setNewStudent({
+                ...newStudent,
+                belt: value ?? "",
+              })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Chọn cấp đai" />
+            </SelectTrigger>
+
+            <SelectContent>
+              {BELT_NAMES.map((belt) => (
+                <SelectItem key={belt} value={belt}>
+                  {belt}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* STATUS */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Trạng thái</label>
+
+          <Select
+            value={newStudent.status}
+            onValueChange={(value) =>
+              setNewStudent({
+                ...newStudent,
+                status: value ?? "",
+              })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+
+            <SelectContent>
+              <SelectItem value="Đang tập">Đang tập</SelectItem>
+
+              <SelectItem value="Hết hạn">Hết hạn</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* NOTE */}
+        <div className="space-y-2 md:col-span-2">
+          <label className="text-sm font-medium">Ghi chú</label>
+
+          <Input
+            placeholder="Nhập ghi chú nếu có"
+            value={newStudent.note}
+            onChange={(e) =>
+              setNewStudent({
+                ...newStudent,
+                note: e.target.value,
+              })
+            }
+          />
+        </div>
+      </>
+    );
+  }
+
+  // ===================================================
+  // RENDER
+  // ===================================================
+
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* HEADER */}
+
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="flex items-center gap-3">
@@ -301,7 +809,8 @@ export default function StudentsPage() {
           </div>
         </div>
 
-        {/* Add student */}
+        {/* ADD */}
+
         {!isStaff && (
           <Dialog open={open} onOpenChange={setOpen}>
             <Button className="gap-2" onClick={handleOpenAddStudent}>
@@ -309,7 +818,7 @@ export default function StudentsPage() {
               Thêm học viên
             </Button>
 
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Thêm học viên</DialogTitle>
 
@@ -318,217 +827,10 @@ export default function StudentsPage() {
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="grid gap-4 py-4 md:grid-cols-2">
-                {/* Họ tên */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    Họ và tên <span className="text-red-500">*</span>
-                  </label>
+              <AvatarUploadSection />
 
-                  <Input
-                    placeholder="Nguyễn Văn A"
-                    value={newStudent.name}
-                    onChange={(e) =>
-                      setNewStudent({
-                        ...newStudent,
-                        name: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-
-                {/* Ngày sinh */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    Ngày sinh <span className="text-red-500">*</span>
-                  </label>
-
-                  <Input
-                    type="date"
-                    value={newStudent.birthDate}
-                    onChange={(e) =>
-                      setNewStudent({
-                        ...newStudent,
-                        birthDate: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-
-                {/* Giới tính */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    Giới tính <span className="text-red-500">*</span>
-                  </label>
-
-                  <Select
-                    value={newStudent.gender}
-                    onValueChange={(value) =>
-                      setNewStudent({
-                        ...newStudent,
-                        gender: value ?? "",
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Chọn giới tính" />
-                    </SelectTrigger>
-
-                    <SelectContent>
-                      <SelectItem value="Nam">Nam</SelectItem>
-                      <SelectItem value="Nữ">Nữ</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Số điện thoại */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    Số điện thoại <span className="text-red-500">*</span>
-                  </label>
-
-                  <Input
-                    placeholder="0901 234 567"
-                    value={newStudent.phone}
-                    onChange={(e) =>
-                      setNewStudent({
-                        ...newStudent,
-                        phone: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-
-                {/* Địa chỉ */}
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-medium">Địa chỉ</label>
-
-                  <Input
-                    placeholder="Nhập địa chỉ"
-                    value={newStudent.address}
-                    onChange={(e) =>
-                      setNewStudent({
-                        ...newStudent,
-                        address: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-
-                {/* Ngày tham gia */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    Ngày tham gia <span className="text-red-500">*</span>
-                  </label>
-
-                  <Input
-                    type="date"
-                    value={newStudent.joinDate}
-                    onChange={(e) =>
-                      setNewStudent({
-                        ...newStudent,
-                        joinDate: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-
-                {/* Lớp học */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Lớp học</label>
-
-                  <Select
-                    value={newStudent.className}
-                    onValueChange={(value) =>
-                      setNewStudent({
-                        ...newStudent,
-                        className: value ?? "",
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Chọn lớp học" />
-                    </SelectTrigger>
-
-                    <SelectContent>
-                      {classes.map((item) => (
-                        <SelectItem key={item.id} value={item.name}>
-                          {item.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Cấp đai */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    Cấp đai <span className="text-red-500">*</span>
-                  </label>
-
-                  <Select
-                    value={newStudent.belt}
-                    onValueChange={(value) =>
-                      setNewStudent({
-                        ...newStudent,
-                        belt: value ?? "",
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Chọn cấp đai" />
-                    </SelectTrigger>
-
-                    <SelectContent>
-                      {BELT_NAMES.map((belt) => (
-                        <SelectItem key={belt} value={belt}>
-                          {belt}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Trạng thái */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Trạng thái</label>
-
-                  <Select
-                    value={newStudent.status}
-                    onValueChange={(value) =>
-                      setNewStudent({
-                        ...newStudent,
-                        status: value ?? "",
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-
-                    <SelectContent>
-                      <SelectItem value="Đang tập">Đang tập</SelectItem>
-
-                      <SelectItem value="Hết hạn">Hết hạn</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Ghi chú */}
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-medium">Ghi chú</label>
-
-                  <Input
-                    placeholder="Nhập ghi chú nếu có"
-                    value={newStudent.note}
-                    onChange={(e) =>
-                      setNewStudent({
-                        ...newStudent,
-                        note: e.target.value,
-                      })
-                    }
-                  />
-                </div>
+              <div className="grid gap-4 py-2 md:grid-cols-2">
+                {renderStudentFormFields()}
               </div>
 
               <DialogFooter>
@@ -536,229 +838,31 @@ export default function StudentsPage() {
                   Hủy
                 </Button>
 
-                <Button onClick={handleAddStudent}>Lưu học viên</Button>
+                <Button disabled={uploadingAvatar} onClick={handleAddStudent}>
+                  Lưu học viên
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         )}
       </div>
 
-      {/* Edit student */}
+      {/* EDIT */}
+
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Chỉnh sửa học viên</DialogTitle>
 
-            <DialogDescription>Cập nhật thông tin học viên.</DialogDescription>
+            <DialogDescription>
+              Cập nhật thông tin và ảnh đại diện học viên.
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4 md:grid-cols-2">
-            {/* Họ tên */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Họ và tên <span className="text-red-500">*</span>
-              </label>
+          <AvatarUploadSection editing />
 
-              <Input
-                value={newStudent.name}
-                onChange={(e) =>
-                  setNewStudent({
-                    ...newStudent,
-                    name: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            {/* Ngày sinh */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Ngày sinh <span className="text-red-500">*</span>
-              </label>
-
-              <Input
-                type="text"
-                placeholder="DD/MM/YYYY"
-                value={newStudent.birthDate}
-                onChange={(e) =>
-                  setNewStudent({
-                    ...newStudent,
-                    birthDate: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            {/* Giới tính */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Giới tính <span className="text-red-500">*</span>
-              </label>
-
-              <Select
-                value={newStudent.gender}
-                onValueChange={(value) =>
-                  setNewStudent({
-                    ...newStudent,
-                    gender: value ?? "",
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn giới tính" />
-                </SelectTrigger>
-
-                <SelectContent>
-                  <SelectItem value="Nam">Nam</SelectItem>
-                  <SelectItem value="Nữ">Nữ</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Số điện thoại */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Số điện thoại <span className="text-red-500">*</span>
-              </label>
-
-              <Input
-                value={newStudent.phone}
-                onChange={(e) =>
-                  setNewStudent({
-                    ...newStudent,
-                    phone: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            {/* Địa chỉ */}
-            <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-medium">Địa chỉ</label>
-
-              <Input
-                value={newStudent.address}
-                onChange={(e) =>
-                  setNewStudent({
-                    ...newStudent,
-                    address: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            {/* Ngày tham gia */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Ngày tham gia <span className="text-red-500">*</span>
-              </label>
-
-              <Input
-                type="text"
-                placeholder="DD/MM/YYYY"
-                value={newStudent.joinDate}
-                onChange={(e) =>
-                  setNewStudent({
-                    ...newStudent,
-                    joinDate: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            {/* Lớp học */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Lớp học</label>
-
-              <Select
-                value={newStudent.className}
-                onValueChange={(value) =>
-                  setNewStudent({
-                    ...newStudent,
-                    className: value ?? "",
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn lớp học" />
-                </SelectTrigger>
-
-                <SelectContent>
-                  {classes.map((item) => (
-                    <SelectItem key={item.id} value={item.name}>
-                      {item.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Cấp đai */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Cấp đai <span className="text-red-500">*</span>
-              </label>
-
-              <Select
-                value={newStudent.belt}
-                onValueChange={(value) =>
-                  setNewStudent({
-                    ...newStudent,
-                    belt: value ?? "",
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn cấp đai" />
-                </SelectTrigger>
-                <SelectContent>
-                  {BELT_NAMES.map((belt) => (
-                    <SelectItem key={belt} value={belt}>
-                      {belt}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Trạng thái */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Trạng thái</label>
-
-              <Select
-                value={newStudent.status}
-                onValueChange={(value) =>
-                  setNewStudent({
-                    ...newStudent,
-                    status: value ?? "",
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-
-                <SelectContent>
-                  <SelectItem value="Đang tập">Đang tập</SelectItem>
-                  <SelectItem value="Hết hạn">Hết hạn</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Ghi chú */}
-            <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-medium">Ghi chú</label>
-
-              <Input
-                value={newStudent.note}
-                onChange={(e) =>
-                  setNewStudent({
-                    ...newStudent,
-                    note: e.target.value,
-                  })
-                }
-              />
-            </div>
+          <div className="grid gap-4 py-2 md:grid-cols-2">
+            {renderStudentFormFields()}
           </div>
 
           <DialogFooter>
@@ -766,15 +870,17 @@ export default function StudentsPage() {
               Hủy
             </Button>
 
-            <Button onClick={handleUpdateStudent}>Lưu thay đổi</Button>
+            <Button disabled={uploadingAvatar} onClick={handleUpdateStudent}>
+              Lưu thay đổi
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Filters */}
+      {/* FILTER */}
+
       <div className="rounded-xl border bg-white p-4 shadow-sm">
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
 
@@ -786,10 +892,9 @@ export default function StudentsPage() {
             />
           </div>
 
-          {/* Belt */}
           <Select
             value={beltFilter}
-            onValueChange={(value) => setBeltFilter(value ?? "")}
+            onValueChange={(value) => setBeltFilter(value ?? "all")}
           >
             <SelectTrigger>
               <SelectValue placeholder="Cấp đai" />
@@ -806,10 +911,9 @@ export default function StudentsPage() {
             </SelectContent>
           </Select>
 
-          {/* Class */}
           <Select
             value={classFilter}
-            onValueChange={(value) => setClassFilter(value ?? "")}
+            onValueChange={(value) => setClassFilter(value ?? "all")}
           >
             <SelectTrigger>
               <SelectValue placeholder="Lớp học" />
@@ -826,10 +930,9 @@ export default function StudentsPage() {
             </SelectContent>
           </Select>
 
-          {/* Status */}
           <Select
             value={statusFilter}
-            onValueChange={(value) => setStatusFilter(value ?? "")}
+            onValueChange={(value) => setStatusFilter(value ?? "all")}
           >
             <SelectTrigger>
               <SelectValue placeholder="Trạng thái" />
@@ -846,7 +949,8 @@ export default function StudentsPage() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* TABLE */}
+
       <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
         <Table>
           <TableHeader>
@@ -854,12 +958,19 @@ export default function StudentsPage() {
               <TableHead className="w-[60px]">STT</TableHead>
 
               <TableHead>Họ và tên</TableHead>
+
               <TableHead>Số điện thoại</TableHead>
+
               <TableHead>Ngày sinh</TableHead>
+
               <TableHead>Giới tính</TableHead>
+
               <TableHead>Lớp học</TableHead>
+
               <TableHead>Cấp đai</TableHead>
+
               <TableHead>Trạng thái</TableHead>
+
               <TableHead className="text-right">Thao tác</TableHead>
             </TableRow>
           </TableHeader>
@@ -871,12 +982,22 @@ export default function StudentsPage() {
                   <TableCell className="font-medium">{index + 1}</TableCell>
 
                   <TableCell>
-                    <div className="font-medium text-slate-900">
-                      {student.name}
-                    </div>
+                    <div className="flex items-center gap-3">
+                      <Avatar
+                        name={student.name}
+                        src={student.avatarUrl}
+                        size="sm"
+                      />
 
-                    <div className="text-xs text-slate-400">
-                      Tham gia {student.joinDate}
+                      <div className="min-w-0">
+                        <div className="font-medium text-slate-900">
+                          {student.name}
+                        </div>
+
+                        <div className="text-xs text-slate-400">
+                          Tham gia {student.joinDate}
+                        </div>
+                      </div>
                     </div>
                   </TableCell>
 
@@ -955,7 +1076,8 @@ export default function StudentsPage() {
           </TableBody>
         </Table>
 
-        {/* Footer */}
+        {/* FOOTER */}
+
         <div className="flex items-center justify-between border-t px-4 py-4 text-sm text-slate-500">
           <span>
             Hiển thị {filteredStudents.length} / {students.length} học viên
@@ -966,45 +1088,36 @@ export default function StudentsPage() {
             <strong className="text-slate-900">{students.length}</strong>
           </span>
         </div>
-        {/* View student */}
-        <Dialog open={viewOpen} onOpenChange={setViewOpen}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Thông tin học viên</DialogTitle>
-              <DialogDescription>
-                Chi tiết thông tin học viên trong CLB.
-              </DialogDescription>
-            </DialogHeader>
+      </div>
 
-            {selectedStudent && (
-              <div className="grid gap-4 py-4 md:grid-cols-2">
-                <div>
-                  <p className="text-sm text-slate-500">Họ và tên</p>
-                  <p className="font-medium">{selectedStudent.name}</p>
-                </div>
+      {/* VIEW */}
 
-                <div>
-                  <p className="text-sm text-slate-500">Số điện thoại</p>
-                  <p className="font-medium">{selectedStudent.phone}</p>
-                </div>
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Thông tin học viên</DialogTitle>
 
-                <div>
-                  <p className="text-sm text-slate-500">Ngày sinh</p>
-                  <p className="font-medium">{selectedStudent.birthDate}</p>
-                </div>
+            <DialogDescription>
+              Chi tiết thông tin học viên trong CLB.
+            </DialogDescription>
+          </DialogHeader>
 
-                <div>
-                  <p className="text-sm text-slate-500">Giới tính</p>
-                  <p className="font-medium">{selectedStudent.gender}</p>
-                </div>
+          {selectedStudent && (
+            <div className="py-2">
+              {/* PROFILE HEADER */}
 
-                <div>
-                  <p className="text-sm text-slate-500">Lớp học</p>
-                  <p className="font-medium">{selectedStudent.className}</p>
-                </div>
+              <div className="mb-6 flex flex-col items-center rounded-2xl bg-slate-50 p-5">
+                <Avatar
+                  name={selectedStudent.name}
+                  src={selectedStudent.avatarUrl}
+                  size="xl"
+                />
 
-                <div>
-                  <p className="text-sm text-slate-500">Cấp đai</p>
+                <h3 className="mt-3 text-lg font-bold text-slate-900">
+                  {selectedStudent.name}
+                </h3>
+
+                <div className="mt-2">
                   <Badge
                     variant="outline"
                     className={getBeltClass(selectedStudent.belt)}
@@ -1012,46 +1125,80 @@ export default function StudentsPage() {
                     {selectedStudent.belt}
                   </Badge>
                 </div>
+              </div>
 
-                <div>
-                  <p className="text-sm text-slate-500">Trạng thái</p>
-                  <Badge
-                    variant="outline"
-                    className={getStatusClass(selectedStudent.status)}
-                  >
-                    {selectedStudent.status}
-                  </Badge>
-                </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <InfoItem label="Số điện thoại" value={selectedStudent.phone} />
 
-                <div>
-                  <p className="text-sm text-slate-500">Ngày tham gia</p>
-                  <p className="font-medium">{selectedStudent.joinDate}</p>
+                <InfoItem label="Ngày sinh" value={selectedStudent.birthDate} />
+
+                <InfoItem label="Giới tính" value={selectedStudent.gender} />
+
+                <InfoItem label="Lớp học" value={selectedStudent.className} />
+
+                <InfoItem
+                  label="Trạng thái"
+                  value={selectedStudent.status}
+                  badge
+                />
+
+                <InfoItem
+                  label="Ngày tham gia"
+                  value={selectedStudent.joinDate}
+                />
+
+                <div className="md:col-span-2">
+                  <InfoItem
+                    label="Địa chỉ"
+                    value={selectedStudent.address || "Chưa cập nhật"}
+                  />
                 </div>
 
                 <div className="md:col-span-2">
-                  <p className="text-sm text-slate-500">Địa chỉ</p>
-                  <p className="font-medium">
-                    {selectedStudent.address || "Chưa cập nhật"}
-                  </p>
-                </div>
-
-                <div className="md:col-span-2">
-                  <p className="text-sm text-slate-500">Ghi chú</p>
-                  <p className="font-medium">
-                    {selectedStudent.note || "Không có ghi chú"}
-                  </p>
+                  <InfoItem
+                    label="Ghi chú"
+                    value={selectedStudent.note || "Không có ghi chú"}
+                  />
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewOpen(false)}>
-                Đóng
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewOpen(false)}>
+              Đóng
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// =====================================================
+// INFO ITEM
+// =====================================================
+
+function InfoItem({
+  label,
+  value,
+  badge = false,
+}: {
+  label: string;
+  value: string;
+  badge?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-sm text-slate-500">{label}</p>
+
+      {badge ? (
+        <Badge variant="outline" className={`mt-1 ${getStatusClass(value)}`}>
+          {value}
+        </Badge>
+      ) : (
+        <p className="mt-1 font-medium text-slate-900">{value}</p>
+      )}
     </div>
   );
 }

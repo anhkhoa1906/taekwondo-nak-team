@@ -2,79 +2,310 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
-export async function GET() {
+type AccountRole = "admin" | "coach" | "staff";
+type AccessLevel = "manage" | "view";
+
+// =====================================================
+// ADMIN SUPABASE CLIENT
+// Dùng Service Role cho thao tác Auth Admin
+// =====================================================
+
+function getAdminClient() {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+  if (!serviceRoleKey || !supabaseUrl) {
+    throw new Error("Thiếu cấu hình Supabase Service Role.");
+  }
+
+  return createAdminClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
+// =====================================================
+// CURRENT USER
+// Dùng session hiện tại của người đang đăng nhập
+// =====================================================
+
+async function getCurrentUser() {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error || !user) {
+    return {
+      supabase,
+      user: null,
+    };
+  }
+
+  return {
+    supabase,
+    user,
+  };
+}
+
+// =====================================================
+// GET CLUB ID
+// =====================================================
+
+function getClubId(request: Request) {
+  const url = new URL(request.url);
+
+  return url.searchParams.get("clubId")?.trim() || null;
+}
+
+// =====================================================
+// CHECK CLUB ADMIN
+//
+// QUAN TRỌNG:
+// Dùng Supabase client của USER hiện tại.
+// Không dùng Service Role ở bước kiểm tra quyền.
+//
+// RLS:
+// club_members -> Members can read own memberships
+// =====================================================
+
+async function checkClubAdmin(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  clubId: string,
+) {
   try {
-    // =========================
-    // 1. Kiểm tra user đăng nhập
-    // =========================
-    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("club_members")
+      .select(
+        `
+          id,
+          user_id,
+          club_id,
+          role,
+          access_level
+        `,
+      )
+      .eq("user_id", userId)
+      .eq("club_id", clubId)
+      .limit(1);
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+    if (error) {
+      console.error("LỖI CHECK CLUB_MEMBERS:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        userId,
+        clubId,
+      });
 
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: "Bạn chưa đăng nhập." },
-        { status: 401 },
-      );
+      return {
+        allowed: false,
+        membership: null,
+        error: "Không thể kiểm tra quyền CLB.",
+      };
     }
 
-    // =========================
-    // 2. Lấy profile của user
-    // =========================
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id, club_id, role")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const membership = data?.[0] ?? null;
 
-    if (profileError) {
-      console.error(profileError);
+    if (!membership) {
+      console.error("KHÔNG TÌM THẤY MEMBERSHIP:", {
+        userId,
+        clubId,
+      });
 
-      return NextResponse.json(
-        { error: "Không thể kiểm tra quyền tài khoản." },
-        { status: 500 },
-      );
+      return {
+        allowed: false,
+        membership: null,
+        error: "Bạn không thuộc CLB này.",
+      };
     }
 
-    // =========================
-    // 3. Chỉ Admin được sử dụng API
-    // =========================
-    if (!profile || profile.role !== "admin") {
-      return NextResponse.json(
-        { error: "Bạn không có quyền truy cập." },
-        { status: 403 },
-      );
+    console.log("CHECK QUYỀN CLB:", {
+      userId,
+      clubId,
+      role: membership.role,
+      accessLevel: membership.access_level,
+    });
+
+    if (membership.role !== "admin") {
+      console.error("USER KHÔNG PHẢI ADMIN:", {
+        userId,
+        clubId,
+        role: membership.role,
+        accessLevel: membership.access_level,
+      });
+
+      return {
+        allowed: false,
+        membership,
+        error: "Chỉ Admin mới có thể quản lý tài khoản.",
+      };
     }
 
-    // =========================
-    // 4. Tạo Admin Client
-    // =========================
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    return {
+      allowed: true,
+      membership,
+      error: null,
+    };
+  } catch (error) {
+    console.error("EXCEPTION CHECK CLUB:", error);
 
-    if (!serviceRoleKey) {
+    return {
+      allowed: false,
+      membership: null,
+      error: "Không thể kiểm tra quyền CLB.",
+    };
+  }
+}
+
+// =====================================================
+// GET
+// Lấy tài khoản theo CLB hiện tại
+// =====================================================
+
+export async function GET(request: Request) {
+  try {
+    const clubId = getClubId(request);
+
+    if (!clubId) {
       return NextResponse.json(
-        { error: "Thiếu SUPABASE_SERVICE_ROLE_KEY." },
-        { status: 500 },
-      );
-    }
-
-    const adminSupabase = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceRoleKey,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
+        {
+          error: "Thiếu clubId.",
         },
-      },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const { supabase, user } = await getCurrentUser();
+
+    if (!user) {
+      return NextResponse.json(
+        {
+          error: "Bạn chưa đăng nhập.",
+        },
+        {
+          status: 401,
+        },
+      );
+    }
+
+    // ===============================================
+    // CHECK ADMIN BẰNG SESSION USER
+    // ===============================================
+
+    const permission = await checkClubAdmin(supabase, user.id, clubId);
+
+    if (!permission.allowed) {
+      return NextResponse.json(
+        {
+          error: permission.error,
+        },
+        {
+          status: 403,
+        },
+      );
+    }
+
+    // ===============================================
+    // SAU KHI ĐÃ XÁC THỰC
+    // Dùng Service Role để lấy dữ liệu Auth
+    // ===============================================
+
+    const adminSupabase = getAdminClient();
+
+    // ===============================================
+    // MEMBERSHIPS
+    // ===============================================
+
+    const { data: memberships, error: membershipError } = await adminSupabase
+      .from("club_members")
+      .select(
+        `
+            id,
+            user_id,
+            club_id,
+            role,
+            access_level,
+            created_at
+          `,
+      )
+      .eq("club_id", clubId)
+      .order("created_at", {
+        ascending: true,
+      });
+
+    if (membershipError) {
+      console.error("Lỗi lấy membership:", membershipError);
+
+      return NextResponse.json(
+        {
+          error: "Không thể lấy danh sách thành viên.",
+        },
+        {
+          status: 500,
+        },
+      );
+    }
+
+    // ===============================================
+    // PROFILE
+    // ===============================================
+
+    const userIds = (memberships ?? []).map((item) => item.user_id);
+
+    let profiles: {
+      user_id: string;
+      display_name: string | null;
+      created_at: string | null;
+      updated_at: string | null;
+    }[] = [];
+
+    if (userIds.length > 0) {
+      const { data, error: profileError } = await adminSupabase
+        .from("profiles")
+        .select(
+          `
+              user_id,
+              display_name,
+              created_at,
+              updated_at
+            `,
+        )
+        .in("user_id", userIds);
+
+      if (profileError) {
+        console.error("Lỗi lấy profiles:", profileError);
+
+        return NextResponse.json(
+          {
+            error: "Không thể lấy thông tin tài khoản.",
+          },
+          {
+            status: 500,
+          },
+        );
+      }
+
+      profiles = data ?? [];
+    }
+
+    const profileMap = new Map(
+      profiles.map((profile) => [profile.user_id, profile]),
     );
 
-    // =========================
-    // 5. Lấy danh sách Auth Users
-    // =========================
+    // ===============================================
+    // AUTH USERS
+    // ===============================================
+
     const { data: usersData, error: usersError } =
       await adminSupabase.auth.admin.listUsers({
         page: 1,
@@ -82,181 +313,217 @@ export async function GET() {
       });
 
     if (usersError) {
-      console.error(usersError);
+      console.error("Lỗi lấy Auth users:", usersError);
 
       return NextResponse.json(
-        { error: "Không thể lấy danh sách tài khoản." },
-        { status: 500 },
+        {
+          error: "Không thể lấy danh sách tài khoản.",
+        },
+        {
+          status: 500,
+        },
       );
     }
 
-    // =========================
-    // 6. Lấy profiles cùng club
-    // =========================
-    const { data: profiles, error: profilesError } = await adminSupabase
-      .from("profiles")
-      .select("user_id, club_id, role, display_name, created_at, updated_at")
-      .eq("club_id", profile.club_id);
-
-    if (profilesError) {
-      console.error(profilesError);
-
-      return NextResponse.json(
-        { error: "Không thể lấy thông tin phân quyền." },
-        { status: 500 },
-      );
-    }
-
-    // =========================
-    // 7. Ghép Auth User + Profile
-    // =========================
-    const profileMap = new Map(
-      (profiles ?? []).map((item) => [item.user_id, item]),
+    const userMap = new Map(
+      usersData.users.map((authUser) => [authUser.id, authUser]),
     );
 
-    const accounts = usersData.users
-      .map((authUser) => {
-        const userProfile = profileMap.get(authUser.id);
+    // ===============================================
+    // BUILD ACCOUNTS
+    // ===============================================
 
-        if (!userProfile) return null;
+    const accounts = (memberships ?? [])
+      .map((membership) => {
+        const authUser = userMap.get(membership.user_id);
+
+        if (!authUser) {
+          return null;
+        }
+
+        const profile = profileMap.get(membership.user_id);
 
         return {
-          id: authUser.id,
+          id: membership.user_id,
+
           name:
-            userProfile.display_name ||
+            profile?.display_name ||
             authUser.email?.split("@")[0] ||
             "Tài khoản",
+
           email: authUser.email ?? "",
-          role: userProfile.role,
+
+          role: membership.role as AccountRole,
+
+          accessLevel: membership.access_level as AccessLevel,
+
           status: authUser.banned_until ? "inactive" : "active",
-          created_at: userProfile.created_at,
-          updated_at: userProfile.updated_at,
+
+          created_at: membership.created_at,
+
+          updated_at: profile?.updated_at ?? membership.created_at,
         };
       })
-      .filter(Boolean);
+      .filter((item): item is NonNullable<typeof item> => item !== null);
 
     return NextResponse.json({
       accounts,
     });
   } catch (error) {
-    console.error(error);
+    console.error("GET account error:", error);
 
     return NextResponse.json(
-      { error: "Đã xảy ra lỗi máy chủ." },
-      { status: 500 },
+      {
+        error: "Đã xảy ra lỗi máy chủ.",
+      },
+      {
+        status: 500,
+      },
     );
   }
 }
+
+// =====================================================
+// POST
+// TẠO TÀI KHOẢN + MEMBERSHIP
+// =====================================================
+
 export async function POST(request: Request) {
   try {
-    // =========================
-    // 1. Kiểm tra user hiện tại
-    // =========================
-    const supabase = await createClient();
+    const clubId = getClubId(request);
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
+    if (!clubId) {
       return NextResponse.json(
-        { error: "Bạn chưa đăng nhập." },
-        { status: 401 },
+        {
+          error: "Thiếu clubId.",
+        },
+        {
+          status: 400,
+        },
       );
     }
 
-    // =========================
-    // 2. Kiểm tra profile Admin
-    // =========================
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id, club_id, role")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const { supabase, user } = await getCurrentUser();
 
-    if (profileError || !profile) {
-      console.error("Profile error:", profileError);
-
+    if (!user) {
       return NextResponse.json(
-        { error: "Không thể lấy thông tin phân quyền." },
-        { status: 500 },
+        {
+          error: "Bạn chưa đăng nhập.",
+        },
+        {
+          status: 401,
+        },
       );
     }
 
-    if (profile.role !== "admin") {
+    const permission = await checkClubAdmin(supabase, user.id, clubId);
+
+    if (!permission.allowed) {
       return NextResponse.json(
-        { error: "Chỉ Admin mới có thể tạo tài khoản." },
-        { status: 403 },
+        {
+          error: permission.error,
+        },
+        {
+          status: 403,
+        },
       );
     }
 
-    // =========================
-    // 3. Lấy dữ liệu từ form
-    // =========================
     const body = await request.json();
 
     const name = String(body.name ?? "").trim();
+
     const email = String(body.email ?? "")
       .trim()
       .toLowerCase();
+
     const password = String(body.password ?? "").trim();
-    const role = body.role as "admin" | "coach" | "staff";
+
+    const role = body.role as AccountRole;
+
+    const accessLevel = body.accessLevel as AccessLevel;
 
     if (!name) {
       return NextResponse.json(
-        { error: "Vui lòng nhập tên." },
-        { status: 400 },
+        {
+          error: "Vui lòng nhập tên.",
+        },
+        {
+          status: 400,
+        },
       );
     }
 
     if (!email) {
       return NextResponse.json(
-        { error: "Vui lòng nhập email." },
-        { status: 400 },
+        {
+          error: "Vui lòng nhập email.",
+        },
+        {
+          status: 400,
+        },
       );
     }
 
-    if (!password || password.length < 6) {
+    if (password.length < 6) {
       return NextResponse.json(
-        { error: "Mật khẩu phải có ít nhất 6 ký tự." },
-        { status: 400 },
+        {
+          error: "Mật khẩu phải có ít nhất 6 ký tự.",
+        },
+        {
+          status: 400,
+        },
       );
     }
 
     if (!["admin", "coach", "staff"].includes(role)) {
       return NextResponse.json(
-        { error: "Vai trò không hợp lệ." },
-        { status: 400 },
-      );
-    }
-
-    // =========================
-    // 4. Service Role Client
-    // =========================
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!serviceRoleKey) {
-      return NextResponse.json(
-        { error: "Thiếu SUPABASE_SERVICE_ROLE_KEY." },
-        { status: 500 },
-      );
-    }
-
-    const adminSupabase = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceRoleKey,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
+        {
+          error: "Vai trò không hợp lệ.",
         },
-      },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const finalAccessLevel =
+      role === "admin"
+        ? "manage"
+        : accessLevel === "manage"
+          ? "manage"
+          : "view";
+
+    const adminSupabase = getAdminClient();
+
+    // ===============================================
+    // CHECK EMAIL
+    // ===============================================
+
+    const { data: usersData } = await adminSupabase.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000,
+    });
+
+    const existingUser = usersData.users.find(
+      (item) => item.email?.toLowerCase() === email,
     );
 
-    // =========================
-    // 5. Tạo User trong Supabase Auth
-    // =========================
+    if (existingUser) {
+      return NextResponse.json(
+        {
+          error: "Email này đã tồn tại trong hệ thống.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    // ===============================================
+    // CREATE AUTH USER
+    // ===============================================
+
     const { data: authData, error: authError } =
       await adminSupabase.auth.admin.createUser({
         email,
@@ -265,586 +532,759 @@ export async function POST(request: Request) {
       });
 
     if (authError || !authData.user) {
-      console.error("Create auth user error:", authError);
+      console.error("Lỗi create auth user:", authError);
 
       return NextResponse.json(
         {
           error: authError?.message || "Không thể tạo tài khoản.",
         },
-        { status: 400 },
+        {
+          status: 400,
+        },
       );
     }
 
     const newUser = authData.user;
 
-    // =========================
-    // 6. Tạo profile
-    // =========================
-    const { data: newProfile, error: newProfileError } = await adminSupabase
+    // ===============================================
+    // CREATE PROFILE
+    // ===============================================
+
+    const { data: newProfile, error: profileError } = await adminSupabase
       .from("profiles")
       .insert({
         user_id: newUser.id,
-        club_id: profile.club_id,
+
+        club_id: clubId,
+
         role,
+
         display_name: name,
       })
-      .select("user_id, club_id, role, display_name, created_at, updated_at")
+      .select(
+        `
+            user_id,
+            club_id,
+            role,
+            display_name,
+            created_at,
+            updated_at
+          `,
+      )
       .single();
 
-    // =========================
-    // 7. Nếu tạo profile lỗi
-    //    → xóa Auth User vừa tạo
-    // =========================
-    if (newProfileError || !newProfile) {
-      console.error("Create profile error:", newProfileError);
+    if (profileError || !newProfile) {
+      console.error("Lỗi create profile:", profileError);
+
+      await adminSupabase.auth.admin.deleteUser(newUser.id);
+
+      return NextResponse.json(
+        {
+          error: profileError?.message || "Không thể tạo profile.",
+        },
+        {
+          status: 500,
+        },
+      );
+    }
+
+    // ===============================================
+    // CREATE CLUB MEMBERSHIP
+    // ===============================================
+
+    const { data: membership, error: membershipError } = await adminSupabase
+      .from("club_members")
+      .insert({
+        user_id: newUser.id,
+
+        club_id: clubId,
+
+        role,
+
+        access_level: finalAccessLevel,
+      })
+      .select(
+        `
+            id,
+            user_id,
+            club_id,
+            role,
+            access_level,
+            created_at
+          `,
+      )
+      .single();
+
+    if (membershipError || !membership) {
+      console.error("Lỗi create membership:", membershipError);
+
+      await adminSupabase.from("profiles").delete().eq("user_id", newUser.id);
 
       await adminSupabase.auth.admin.deleteUser(newUser.id);
 
       return NextResponse.json(
         {
           error:
-            newProfileError?.message || "Không thể tạo thông tin phân quyền.",
+            membershipError?.message || "Không thể tạo quyền truy cập CLB.",
         },
-        { status: 500 },
+        {
+          status: 500,
+        },
       );
     }
 
-    // =========================
-    // 8. Thành công
-    // =========================
     return NextResponse.json(
       {
         message: "Đã tạo tài khoản thành công.",
+
         account: {
           id: newUser.id,
-          name: newProfile.display_name,
+
+          name,
+
           email: newUser.email ?? email,
-          role: newProfile.role,
+
+          role,
+
+          accessLevel: finalAccessLevel,
+
           status: "active",
-          created_at: newProfile.created_at,
+
+          created_at: membership.created_at,
+
           updated_at: newProfile.updated_at,
         },
       },
-      { status: 201 },
+      {
+        status: 201,
+      },
     );
   } catch (error) {
-    console.error("Create account error:", error);
+    console.error("POST account error:", error);
 
     return NextResponse.json(
-      { error: "Đã xảy ra lỗi máy chủ." },
-      { status: 500 },
+      {
+        error: "Đã xảy ra lỗi máy chủ.",
+      },
+      {
+        status: 500,
+      },
     );
   }
 }
+
+// =====================================================
+// PATCH
+// SỬA TÀI KHOẢN TRONG CLB HIỆN TẠI
+// =====================================================
+
 export async function PATCH(request: Request) {
   try {
-    // =========================
-    // 1. Kiểm tra user hiện tại
-    // =========================
-    const supabase = await createClient();
+    const clubId = getClubId(request);
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
+    if (!clubId) {
       return NextResponse.json(
-        { error: "Bạn chưa đăng nhập." },
-        { status: 401 },
+        {
+          error: "Thiếu clubId.",
+        },
+        {
+          status: 400,
+        },
       );
     }
 
-    // =========================
-    // 2. Kiểm tra Admin
-    // =========================
-    const { data: currentProfile, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id, club_id, role")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const { supabase, user } = await getCurrentUser();
 
-    if (profileError || !currentProfile) {
+    if (!user) {
       return NextResponse.json(
-        { error: "Không thể lấy thông tin phân quyền." },
-        { status: 500 },
+        {
+          error: "Bạn chưa đăng nhập.",
+        },
+        {
+          status: 401,
+        },
       );
     }
 
-    if (currentProfile.role !== "admin") {
+    const permission = await checkClubAdmin(supabase, user.id, clubId);
+
+    if (!permission.allowed) {
       return NextResponse.json(
-        { error: "Chỉ Admin mới có thể chỉnh sửa tài khoản." },
-        { status: 403 },
+        {
+          error: permission.error,
+        },
+        {
+          status: 403,
+        },
       );
     }
 
-    // =========================
-    // 3. Lấy dữ liệu
-    // =========================
     const body = await request.json();
 
     const userId = String(body.userId ?? "").trim();
+
     const name = String(body.name ?? "").trim();
+
     const email = String(body.email ?? "")
       .trim()
       .toLowerCase();
-    const role = body.role as "admin" | "coach" | "staff";
+
+    const role = body.role as AccountRole;
+
+    const accessLevel = body.accessLevel as AccessLevel;
 
     if (!userId) {
-      return NextResponse.json({ error: "Thiếu user ID." }, { status: 400 });
-    }
-
-    if (!name) {
       return NextResponse.json(
-        { error: "Vui lòng nhập tên." },
-        { status: 400 },
+        {
+          error: "Thiếu user ID.",
+        },
+        {
+          status: 400,
+        },
       );
     }
 
-    if (!email) {
+    if (!name || !email) {
       return NextResponse.json(
-        { error: "Vui lòng nhập email." },
-        { status: 400 },
+        {
+          error: "Vui lòng nhập đầy đủ thông tin.",
+        },
+        {
+          status: 400,
+        },
       );
     }
 
     if (!["admin", "coach", "staff"].includes(role)) {
       return NextResponse.json(
-        { error: "Vai trò không hợp lệ." },
-        { status: 400 },
-      );
-    }
-
-    // =========================
-    // 4. Service Role Client
-    // =========================
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!serviceRoleKey) {
-      return NextResponse.json(
-        { error: "Thiếu SUPABASE_SERVICE_ROLE_KEY." },
-        { status: 500 },
-      );
-    }
-
-    const adminSupabase = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceRoleKey,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
+        {
+          error: "Vai trò không hợp lệ.",
         },
-      },
-    );
+        {
+          status: 400,
+        },
+      );
+    }
 
-    // =========================
-    // 5. Kiểm tra tài khoản
-    //    thuộc CLB hiện tại
-    // =========================
-    const { data: targetProfile, error: targetError } = await adminSupabase
-      .from("profiles")
-      .select("user_id, club_id, role, display_name, created_at, updated_at")
+    const finalAccessLevel =
+      role === "admin"
+        ? "manage"
+        : accessLevel === "manage"
+          ? "manage"
+          : "view";
+
+    const adminSupabase = getAdminClient();
+
+    // ===============================================
+    // TARGET MEMBERSHIP
+    // ===============================================
+
+    const { data: targetMembership, error: targetError } = await adminSupabase
+      .from("club_members")
+      .select(
+        `
+            id,
+            user_id,
+            club_id,
+            role,
+            access_level
+          `,
+      )
       .eq("user_id", userId)
+      .eq("club_id", clubId)
+      .limit(1)
       .maybeSingle();
 
-    if (targetError || !targetProfile) {
+    if (targetError) {
+      console.error("Lỗi target membership:", targetError);
+
       return NextResponse.json(
-        { error: "Không tìm thấy tài khoản." },
-        { status: 404 },
+        {
+          error: "Không thể kiểm tra tài khoản trong CLB.",
+        },
+        {
+          status: 500,
+        },
       );
     }
 
-    if (targetProfile.club_id !== currentProfile.club_id) {
+    if (!targetMembership) {
       return NextResponse.json(
-        { error: "Tài khoản không thuộc CLB hiện tại." },
-        { status: 403 },
+        {
+          error: "Tài khoản không thuộc CLB hiện tại.",
+        },
+        {
+          status: 404,
+        },
       );
     }
 
-    // =========================
-    // 6. Không cho Admin tự
-    //    đổi mình thành Coach/Staff
-    // =========================
+    // ===============================================
+    // KHÔNG CHO ADMIN TỰ HẠ QUYỀN
+    // ===============================================
+
     if (
       userId === user.id &&
-      currentProfile.role === "admin" &&
+      permission.membership?.role === "admin" &&
       role !== "admin"
     ) {
       return NextResponse.json(
         {
-          error: "Bạn không thể tự hạ quyền tài khoản Admin của mình.",
+          error: "Bạn không thể tự hạ quyền Admin của mình.",
         },
-        { status: 400 },
+        {
+          status: 400,
+        },
       );
     }
 
-    // =========================
-    // 7. Cập nhật email Auth
-    // =========================
+    // ===============================================
+    // UPDATE AUTH EMAIL
+    // ===============================================
+
     const { data: updatedAuth, error: authError } =
       await adminSupabase.auth.admin.updateUserById(userId, {
         email,
       });
 
     if (authError) {
-      console.error("Update auth user error:", authError);
-
       return NextResponse.json(
         {
           error: authError.message || "Không thể cập nhật email.",
         },
-        { status: 400 },
+        {
+          status: 400,
+        },
       );
     }
 
-    // =========================
-    // 8. Cập nhật Profile
-    // =========================
-    const { data: updatedProfile, error: updateError } = await adminSupabase
+    // ===============================================
+    // UPDATE PROFILE NAME
+    //
+    // Không đổi role/club_id ở profiles.
+    // Role SaaS chính thức nằm ở club_members.
+    // ===============================================
+
+    const { data: updatedProfile, error: profileError } = await adminSupabase
       .from("profiles")
       .update({
         display_name: name,
-        role,
+
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", userId)
-      .eq("club_id", currentProfile.club_id)
-      .select("user_id, club_id, role, display_name, created_at, updated_at")
+      .select(
+        `
+            user_id,
+            display_name,
+            created_at,
+            updated_at
+          `,
+      )
       .single();
 
-    if (updateError || !updatedProfile) {
-      console.error("Update profile error:", updateError);
-
+    if (profileError || !updatedProfile) {
       return NextResponse.json(
         {
-          error:
-            updateError?.message || "Không thể cập nhật thông tin tài khoản.",
+          error: profileError?.message || "Không thể cập nhật profile.",
         },
-        { status: 500 },
+        {
+          status: 500,
+        },
+      );
+    }
+
+    // ===============================================
+    // UPDATE CLUB MEMBERSHIP
+    // ===============================================
+
+    const { data: updatedMembership, error: membershipError } =
+      await adminSupabase
+        .from("club_members")
+        .update({
+          role,
+
+          access_level: finalAccessLevel,
+        })
+        .eq("user_id", userId)
+        .eq("club_id", clubId)
+        .select(
+          `
+            id,
+            user_id,
+            club_id,
+            role,
+            access_level,
+            created_at
+          `,
+        )
+        .single();
+
+    if (membershipError || !updatedMembership) {
+      return NextResponse.json(
+        {
+          error: membershipError?.message || "Không thể cập nhật quyền CLB.",
+        },
+        {
+          status: 500,
+        },
       );
     }
 
     return NextResponse.json({
       message: "Đã cập nhật tài khoản thành công.",
+
       account: {
-        id: updatedProfile.user_id,
-        name: updatedProfile.display_name || email.split("@")[0],
+        id: userId,
+
+        name: updatedProfile.display_name ?? name,
+
         email: updatedAuth.user.email ?? email,
-        role: updatedProfile.role,
+
+        role,
+
+        accessLevel: finalAccessLevel,
+
         status: "active",
-        created_at: updatedProfile.created_at,
+
+        created_at: updatedMembership.created_at,
+
         updated_at: updatedProfile.updated_at,
       },
     });
   } catch (error) {
-    console.error("Update account error:", error);
+    console.error("PATCH account error:", error);
 
     return NextResponse.json(
-      { error: "Đã xảy ra lỗi máy chủ." },
-      { status: 500 },
+      {
+        error: "Đã xảy ra lỗi máy chủ.",
+      },
+      {
+        status: 500,
+      },
     );
   }
 }
+
+// =====================================================
+// DELETE
+// CHỈ XÓA MEMBERSHIP KHỎI CLB
+// KHÔNG XÓA AUTH USER
+// =====================================================
+
 export async function DELETE(request: Request) {
   try {
-    // =========================
-    // 1. Kiểm tra user hiện tại
-    // =========================
-    const supabase = await createClient();
+    const clubId = getClubId(request);
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
+    if (!clubId) {
       return NextResponse.json(
-        { error: "Bạn chưa đăng nhập." },
-        { status: 401 },
+        {
+          error: "Thiếu clubId.",
+        },
+        {
+          status: 400,
+        },
       );
     }
 
-    // =========================
-    // 2. Kiểm tra Admin
-    // =========================
-    const { data: currentProfile, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id, club_id, role")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const { supabase, user } = await getCurrentUser();
 
-    if (profileError || !currentProfile) {
+    if (!user) {
       return NextResponse.json(
-        { error: "Không thể lấy thông tin phân quyền." },
-        { status: 500 },
+        {
+          error: "Bạn chưa đăng nhập.",
+        },
+        {
+          status: 401,
+        },
       );
     }
 
-    if (currentProfile.role !== "admin") {
+    const permission = await checkClubAdmin(supabase, user.id, clubId);
+
+    if (!permission.allowed) {
       return NextResponse.json(
-        { error: "Chỉ Admin mới có thể xóa tài khoản." },
-        { status: 403 },
+        {
+          error: permission.error,
+        },
+        {
+          status: 403,
+        },
       );
     }
 
-    // =========================
-    // 3. Lấy userId cần xóa
-    // =========================
     const body = await request.json();
+
     const userId = String(body.userId ?? "").trim();
 
     if (!userId) {
-      return NextResponse.json({ error: "Thiếu user ID." }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: "Thiếu user ID.",
+        },
+        {
+          status: 400,
+        },
+      );
     }
 
-    // =========================
-    // 4. Không cho tự xóa mình
-    // =========================
     if (userId === user.id) {
       return NextResponse.json(
         {
-          error: "Bạn không thể tự xóa tài khoản của mình.",
+          error: "Bạn không thể tự xóa mình khỏi CLB.",
         },
-        { status: 400 },
+        {
+          status: 400,
+        },
       );
     }
 
-    // =========================
-    // 5. Service Role Client
-    // =========================
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const adminSupabase = getAdminClient();
 
-    if (!serviceRoleKey) {
-      return NextResponse.json(
-        { error: "Thiếu SUPABASE_SERVICE_ROLE_KEY." },
-        { status: 500 },
-      );
-    }
+    // ===============================================
+    // CHECK TARGET
+    // ===============================================
 
-    const adminSupabase = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceRoleKey,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      },
-    );
-
-    // =========================
-    // 6. Kiểm tra target profile
-    // =========================
-    const { data: targetProfile, error: targetError } = await adminSupabase
-      .from("profiles")
-      .select("user_id, club_id, role, display_name")
+    const { data: targetMembership, error: targetError } = await adminSupabase
+      .from("club_members")
+      .select(
+        `
+            id,
+            user_id,
+            club_id,
+            role
+          `,
+      )
       .eq("user_id", userId)
+      .eq("club_id", clubId)
+      .limit(1)
       .maybeSingle();
 
-    if (targetError || !targetProfile) {
+    if (targetError) {
+      console.error(targetError);
+
       return NextResponse.json(
-        { error: "Không tìm thấy tài khoản." },
-        { status: 404 },
+        {
+          error: "Không thể kiểm tra thành viên.",
+        },
+        {
+          status: 500,
+        },
       );
     }
 
-    // =========================
-    // 7. Chỉ xóa tài khoản
-    //    trong cùng CLB
-    // =========================
-    if (targetProfile.club_id !== currentProfile.club_id) {
+    if (!targetMembership) {
       return NextResponse.json(
         {
           error: "Tài khoản không thuộc CLB hiện tại.",
         },
-        { status: 403 },
+        {
+          status: 404,
+        },
       );
     }
 
-    // =========================
-    // 8. Không cho xóa Admin
-    // =========================
-    if (targetProfile.role === "admin") {
+    if (targetMembership.role === "admin") {
       return NextResponse.json(
         {
-          error: "Không thể xóa tài khoản Admin.",
+          error: "Không thể xóa Admin khỏi CLB.",
         },
-        { status: 400 },
+        {
+          status: 400,
+        },
       );
     }
 
-    // =========================
-    // 9. Xóa Auth User
-    // =========================
-    const { error: deleteAuthError } =
-      await adminSupabase.auth.admin.deleteUser(userId);
+    // ===============================================
+    // DELETE MEMBERSHIP ONLY
+    // ===============================================
 
-    if (deleteAuthError) {
-      console.error("Delete auth user error:", deleteAuthError);
+    const { error: deleteError } = await adminSupabase
+      .from("club_members")
+      .delete()
+      .eq("user_id", userId)
+      .eq("club_id", clubId);
+
+    if (deleteError) {
+      console.error(deleteError);
 
       return NextResponse.json(
         {
-          error: deleteAuthError.message || "Không thể xóa tài khoản.",
+          error: "Không thể xóa quyền truy cập CLB.",
         },
-        { status: 500 },
+        {
+          status: 500,
+        },
       );
     }
 
-    // profiles có FK on delete cascade
-    // nên profile sẽ được xóa theo Auth User.
     return NextResponse.json({
-      message: "Đã xóa tài khoản thành công.",
+      message: "Đã xóa tài khoản khỏi CLB.",
+
       userId,
+
+      clubId,
     });
   } catch (error) {
-    console.error("Delete account error:", error);
+    console.error("DELETE account error:", error);
 
     return NextResponse.json(
-      { error: "Đã xảy ra lỗi máy chủ." },
-      { status: 500 },
+      {
+        error: "Đã xảy ra lỗi máy chủ.",
+      },
+      {
+        status: 500,
+      },
     );
   }
 }
+
+// =====================================================
+// PUT
+// KHÓA / MỞ KHÓA TÀI KHOẢN
+// =====================================================
+
 export async function PUT(request: Request) {
   try {
-    // =========================
-    // 1. Kiểm tra user hiện tại
-    // =========================
-    const supabase = await createClient();
+    const clubId = getClubId(request);
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
+    if (!clubId) {
       return NextResponse.json(
-        { error: "Bạn chưa đăng nhập." },
-        { status: 401 },
+        {
+          error: "Thiếu clubId.",
+        },
+        {
+          status: 400,
+        },
       );
     }
 
-    // =========================
-    // 2. Kiểm tra Admin
-    // =========================
-    const { data: currentProfile, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id, club_id, role")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const { supabase, user } = await getCurrentUser();
 
-    if (profileError || !currentProfile) {
+    if (!user) {
       return NextResponse.json(
-        { error: "Không thể lấy thông tin phân quyền." },
-        { status: 500 },
+        {
+          error: "Bạn chưa đăng nhập.",
+        },
+        {
+          status: 401,
+        },
       );
     }
 
-    if (currentProfile.role !== "admin") {
+    const permission = await checkClubAdmin(supabase, user.id, clubId);
+
+    if (!permission.allowed) {
       return NextResponse.json(
-        { error: "Chỉ Admin mới có thể khóa/mở khóa tài khoản." },
-        { status: 403 },
+        {
+          error: permission.error,
+        },
+        {
+          status: 403,
+        },
       );
     }
 
-    // =========================
-    // 3. Lấy dữ liệu
-    // =========================
     const body = await request.json();
 
     const userId = String(body.userId ?? "").trim();
+
     const action = body.action as "ban" | "unban";
 
     if (!userId) {
-      return NextResponse.json({ error: "Thiếu user ID." }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: "Thiếu user ID.",
+        },
+        {
+          status: 400,
+        },
+      );
     }
 
     if (!["ban", "unban"].includes(action)) {
       return NextResponse.json(
-        { error: "Thao tác không hợp lệ." },
-        { status: 400 },
+        {
+          error: "Thao tác không hợp lệ.",
+        },
+        {
+          status: 400,
+        },
       );
     }
 
-    // =========================
-    // 4. Không cho tự khóa mình
-    // =========================
     if (userId === user.id) {
       return NextResponse.json(
         {
-          error: "Bạn không thể tự khóa tài khoản Admin của mình.",
+          error: "Bạn không thể tự khóa tài khoản của mình.",
         },
-        { status: 400 },
-      );
-    }
-
-    // =========================
-    // 5. Service Role Client
-    // =========================
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!serviceRoleKey) {
-      return NextResponse.json(
-        { error: "Thiếu SUPABASE_SERVICE_ROLE_KEY." },
-        { status: 500 },
-      );
-    }
-
-    const adminSupabase = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceRoleKey,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
+        {
+          status: 400,
         },
-      },
-    );
-
-    // =========================
-    // 6. Kiểm tra tài khoản mục tiêu
-    // =========================
-    const { data: targetProfile, error: targetError } = await adminSupabase
-      .from("profiles")
-      .select("user_id, club_id, role, display_name, created_at, updated_at")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (targetError || !targetProfile) {
-      return NextResponse.json(
-        { error: "Không tìm thấy tài khoản." },
-        { status: 404 },
       );
     }
 
-    // =========================
-    // 7. Chỉ thao tác trong CLB hiện tại
-    // =========================
-    if (targetProfile.club_id !== currentProfile.club_id) {
+    const adminSupabase = getAdminClient();
+
+    // ===============================================
+    // CHECK TARGET MEMBERSHIP
+    // ===============================================
+
+    const { data: targetMembership, error: membershipError } =
+      await adminSupabase
+        .from("club_members")
+        .select(
+          `
+            user_id,
+            club_id,
+            role,
+            access_level
+          `,
+        )
+        .eq("user_id", userId)
+        .eq("club_id", clubId)
+        .limit(1)
+        .maybeSingle();
+
+    if (membershipError) {
+      console.error(membershipError);
+
+      return NextResponse.json(
+        {
+          error: "Không thể kiểm tra thành viên.",
+        },
+        {
+          status: 500,
+        },
+      );
+    }
+
+    if (!targetMembership) {
       return NextResponse.json(
         {
           error: "Tài khoản không thuộc CLB hiện tại.",
         },
-        { status: 403 },
+        {
+          status: 404,
+        },
       );
     }
 
-    // =========================
-    // 8. Không khóa Admin
-    // =========================
-    if (targetProfile.role === "admin") {
+    if (targetMembership.role === "admin") {
       return NextResponse.json(
         {
-          error: "Không thể khóa tài khoản Admin.",
+          error: "Không thể khóa Admin.",
         },
-        { status: 400 },
+        {
+          status: 400,
+        },
       );
     }
 
-    // =========================
-    // 9. Khóa / mở khóa Auth User
-    // =========================
+    // ===============================================
+    // BAN / UNBAN
+    // ===============================================
+
     const banDuration = action === "ban" ? "876000h" : "none";
 
     const { data: updatedUser, error: updateError } =
@@ -853,39 +1293,69 @@ export async function PUT(request: Request) {
       });
 
     if (updateError) {
-      console.error("Update ban status error:", updateError);
+      console.error(updateError);
 
       return NextResponse.json(
         {
-          error:
-            updateError.message || "Không thể cập nhật trạng thái tài khoản.",
+          error: updateError.message || "Không thể cập nhật trạng thái.",
         },
-        { status: 500 },
+        {
+          status: 500,
+        },
       );
     }
+
+    // ===============================================
+    // PROFILE
+    // ===============================================
+
+    const { data: profile } = await adminSupabase
+      .from("profiles")
+      .select(
+        `
+            display_name,
+            created_at,
+            updated_at
+          `,
+      )
+      .eq("user_id", userId)
+      .maybeSingle();
 
     return NextResponse.json({
       message:
         action === "ban" ? "Đã khóa tài khoản." : "Đã mở khóa tài khoản.",
+
       account: {
-        id: targetProfile.user_id,
+        id: userId,
+
         name:
-          targetProfile.display_name ||
+          profile?.display_name ||
           updatedUser.user.email?.split("@")[0] ||
           "Tài khoản",
+
         email: updatedUser.user.email ?? "",
-        role: targetProfile.role,
+
+        role: targetMembership.role as AccountRole,
+
+        accessLevel: targetMembership.access_level as AccessLevel,
+
         status: action === "ban" ? "inactive" : "active",
-        created_at: targetProfile.created_at,
+
+        created_at: profile?.created_at ?? new Date().toISOString(),
+
         updated_at: new Date().toISOString(),
       },
     });
   } catch (error) {
-    console.error("Toggle account status error:", error);
+    console.error("PUT account error:", error);
 
     return NextResponse.json(
-      { error: "Đã xảy ra lỗi máy chủ." },
-      { status: 500 },
+      {
+        error: "Đã xảy ra lỗi máy chủ.",
+      },
+      {
+        status: 500,
+      },
     );
   }
 }

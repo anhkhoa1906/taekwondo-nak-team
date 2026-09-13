@@ -7,6 +7,7 @@ import {
   useEffect,
   useState,
 } from "react";
+
 import { createClient } from "@/lib/supabase/client";
 import { useClub } from "@/context/club-context";
 
@@ -22,13 +23,20 @@ export type Student = {
   address: string;
   joinDate: string;
   note: string;
+  avatarUrl: string;
 };
 
 type StudentContextType = {
   students: Student[];
+  loading: boolean;
+
   addStudent: (student: Student) => Promise<void>;
+
   updateStudent: (student: Student) => Promise<void>;
+
   deleteStudent: (id: number) => Promise<void>;
+
+  refreshStudents: () => Promise<void>;
 };
 
 type StudentRow = {
@@ -44,9 +52,12 @@ type StudentRow = {
   address: string | null;
   join_date: string | null;
   note: string | null;
+  avatar_url: string | null;
 };
 
-const StudentContext = createContext<StudentContextType | undefined>(undefined);
+// =====================================================
+// DATE
+// =====================================================
 
 function formatDateForDisplay(date: string | null) {
   if (!date) return "";
@@ -63,7 +74,6 @@ function formatDateForDisplay(date: string | null) {
 function formatDateForDatabase(date: string) {
   if (!date) return null;
 
-  // DD/MM/YYYY -> YYYY-MM-DD
   const parts = date.split("/");
 
   if (parts.length === 3) {
@@ -72,9 +82,12 @@ function formatDateForDatabase(date: string) {
     return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
   }
 
-  // YYYY-MM-DD
   return date;
 }
+
+// =====================================================
+// MAP
+// =====================================================
 
 function mapStudent(row: StudentRow): Student {
   return {
@@ -89,41 +102,106 @@ function mapStudent(row: StudentRow): Student {
     address: row.address ?? "",
     joinDate: formatDateForDisplay(row.join_date),
     note: row.note ?? "",
+    avatarUrl: row.avatar_url ?? "",
   };
 }
+
+// =====================================================
+// CONTEXT
+// =====================================================
+
+const StudentContext = createContext<StudentContextType | undefined>(undefined);
+
+// =====================================================
+// PROVIDER
+// =====================================================
 
 export function StudentProvider({ children }: { children: React.ReactNode }) {
   const { club, loading: clubLoading } = useClub();
 
   const [students, setStudents] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // ===================================================
+  // LOAD STUDENTS
+  // ===================================================
 
   const loadStudents = useCallback(async () => {
-    if (!club?.id) {
+    const clubId = club?.id;
+
+    if (!clubId) {
       setStudents([]);
+      setLoading(false);
       return;
     }
+
+    setLoading(true);
 
     const supabase = createClient();
 
     const { data, error } = await supabase
       .from("students")
       .select("*")
-      .eq("club_id", club.id)
-      .order("id", { ascending: true });
+      .eq("club_id", clubId)
+      .order("id", {
+        ascending: true,
+      });
 
     if (error) {
       console.error("Lỗi tải danh sách học viên:", error);
+
+      setStudents([]);
+      setLoading(false);
       return;
     }
 
-    setStudents((data as StudentRow[]).map(mapStudent));
+    const mappedStudents = (data as StudentRow[]).map(mapStudent);
+
+    setStudents(mappedStudents);
+
+    setLoading(false);
   }, [club?.id]);
 
+  // ===================================================
+  // LOAD KHI ĐỔI CLB
+  // ===================================================
+
   useEffect(() => {
-    if (clubLoading) return;
+    if (clubLoading) {
+      return;
+    }
+
+    setStudents([]);
+
+    if (!club?.id) {
+      setLoading(false);
+      return;
+    }
 
     loadStudents();
-  }, [clubLoading, loadStudents]);
+  }, [club?.id, clubLoading, loadStudents]);
+
+  // ===================================================
+  // CLUB CHANGED
+  // ===================================================
+
+  useEffect(() => {
+    function handleClubChanged() {
+      console.log("🔄 StudentProvider: CLB đã thay đổi, tải lại học viên...");
+
+      loadStudents();
+    }
+
+    window.addEventListener("club-changed", handleClubChanged);
+
+    return () => {
+      window.removeEventListener("club-changed", handleClubChanged);
+    };
+  }, [loadStudents]);
+
+  // ===================================================
+  // ADD STUDENT
+  // ===================================================
 
   const addStudent = useCallback(
     async (student: Student) => {
@@ -148,6 +226,7 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
           address: student.address,
           join_date: formatDateForDatabase(student.joinDate),
           note: student.note,
+          avatar_url: student.avatarUrl || null,
         })
         .select()
         .single();
@@ -157,10 +236,16 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      setStudents((prev) => [mapStudent(data as StudentRow), ...prev]);
+      const newStudent = mapStudent(data as StudentRow);
+
+      setStudents((prev) => [...prev, newStudent]);
     },
     [club?.id],
   );
+
+  // ===================================================
+  // UPDATE STUDENT
+  // ===================================================
 
   const updateStudent = useCallback(
     async (student: Student) => {
@@ -184,6 +269,7 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
           address: student.address,
           join_date: formatDateForDatabase(student.joinDate),
           note: student.note,
+          avatar_url: student.avatarUrl || null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", student.id)
@@ -196,14 +282,18 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      const updatedStudent = mapStudent(data as StudentRow);
+
       setStudents((prev) =>
-        prev.map((item) =>
-          item.id === student.id ? mapStudent(data as StudentRow) : item,
-        ),
+        prev.map((item) => (item.id === student.id ? updatedStudent : item)),
       );
     },
     [club?.id],
   );
+
+  // ===================================================
+  // DELETE STUDENT
+  // ===================================================
 
   const deleteStudent = useCallback(
     async (id: number) => {
@@ -211,6 +301,8 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
         console.error("Không xác định được CLB hiện tại.");
         return;
       }
+
+      const student = students.find((item) => item.id === id);
 
       const supabase = createClient();
 
@@ -225,24 +317,57 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Xóa avatar khỏi Storage nếu có
+      if (student?.avatarUrl) {
+        const marker = "/student-avatars/";
+
+        const index = student.avatarUrl.indexOf(marker);
+
+        if (index !== -1) {
+          const filePath = decodeURIComponent(
+            student.avatarUrl.substring(index + marker.length),
+          );
+
+          if (filePath) {
+            const { error: storageError } = await supabase.storage
+              .from("student-avatars")
+              .remove([filePath]);
+
+            if (storageError) {
+              console.warn("Không thể xóa avatar cũ:", storageError);
+            }
+          }
+        }
+      }
+
       setStudents((prev) => prev.filter((item) => item.id !== id));
     },
-    [club?.id],
+    [club?.id, students],
   );
+
+  // ===================================================
+  // PROVIDER
+  // ===================================================
 
   return (
     <StudentContext.Provider
       value={{
         students,
+        loading,
         addStudent,
         updateStudent,
         deleteStudent,
+        refreshStudents: loadStudents,
       }}
     >
       {children}
     </StudentContext.Provider>
   );
 }
+
+// =====================================================
+// HOOK
+// =====================================================
 
 export function useStudents() {
   const context = useContext(StudentContext);

@@ -60,8 +60,8 @@ type NewClass = {
 const SCHEDULE_OPTIONS = [
   "Thứ 2 - 4 - 6",
   "Thứ 3 - 5 - 7",
-  "Thứ 2 - 4",
-  "Thứ 3 - 5",
+  "Thứ 3 - 5 - 6 - 7",
+  "Full Tuần",
   "Thứ 7 - Chủ nhật",
 ];
 

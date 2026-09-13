@@ -24,6 +24,7 @@ import { useStudents } from "@/context/student-context";
 import { useTuition } from "@/context/tuition-context";
 import { useAttendance } from "@/context/attendance-context";
 import { useClasses } from "@/context/class-context";
+import { useClub } from "@/context/club-context";
 
 export default function Home() {
   const { students } = useStudents();
@@ -32,6 +33,14 @@ export default function Home() {
   const { getAllTuition } = useTuition();
 
   const { getTodayAttendanceSummary } = useAttendance();
+
+  const { club } = useClub();
+
+  // =====================================================
+  // TÊN CLB HIỆN TẠI
+  // =====================================================
+
+  const clubName = club?.name ?? "Câu lạc bộ";
 
   // =====================================================
   // HỌC VIÊN
@@ -138,11 +147,7 @@ export default function Home() {
                     <h1 className="text-2xl font-bold tracking-tight sm:text-3xl lg:text-4xl">
                       Chào mừng đến với
                       <br className="hidden sm:block" />
-                      <span className="text-slate-300">
-                        {" "}
-                        Taekwondo NAK Team
-                      </span>{" "}
-                      🥋
+                      <span className="text-slate-300"> {clubName}</span> 🥋
                     </h1>
 
                     <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300 sm:text-base">
@@ -156,6 +161,7 @@ export default function Home() {
                   </div>
 
                   {/* QUICK SUMMARY */}
+
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:min-w-[390px]">
                     <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
                       <div className="flex items-center gap-2 text-slate-400">
@@ -195,6 +201,7 @@ export default function Home() {
               </div>
 
               {/* DECORATION */}
+
               <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full border border-white/5" />
 
               <div className="absolute -bottom-40 right-20 h-80 w-80 rounded-full border border-white/5" />
@@ -268,6 +275,7 @@ export default function Home() {
 
             <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {/* LỚP */}
+
               <Link
                 href="/lop-hoc"
                 className="group rounded-2xl border bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
@@ -294,6 +302,7 @@ export default function Home() {
               </Link>
 
               {/* XẾP LỚP */}
+
               <Link
                 href="/hoc-vien"
                 className="group rounded-2xl border bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
@@ -320,6 +329,7 @@ export default function Home() {
               </Link>
 
               {/* ĐIỂM DANH */}
+
               <Link
                 href="/diem-danh"
                 className="group rounded-2xl border bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
@@ -346,6 +356,7 @@ export default function Home() {
               </Link>
 
               {/* HỌC PHÍ */}
+
               <Link
                 href="/hoc-phi"
                 className="group rounded-2xl border bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
@@ -389,6 +400,7 @@ export default function Home() {
 
               <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-2">
                 {/* STUDENT CHART */}
+
                 <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
                   <div className="border-b px-5 py-4 sm:px-6">
                     <div className="flex items-center justify-between gap-3">
@@ -414,6 +426,7 @@ export default function Home() {
                 </div>
 
                 {/* BELT CHART */}
+
                 <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
                   <div className="border-b px-5 py-4 sm:px-6">
                     <div className="flex items-center justify-between gap-3">
@@ -454,6 +467,8 @@ export default function Home() {
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {/* HỌC VIÊN */}
+
                 <Link
                   href="/hoc-vien"
                   className="group flex items-center justify-between rounded-xl border p-4 transition-all hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-sm"
@@ -475,6 +490,8 @@ export default function Home() {
                   <ArrowRight className="h-4 w-4 text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-slate-600" />
                 </Link>
 
+                {/* LỚP HỌC */}
+
                 <Link
                   href="/lop-hoc"
                   className="group flex items-center justify-between rounded-xl border p-4 transition-all hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-sm"
@@ -495,6 +512,8 @@ export default function Home() {
 
                   <ArrowRight className="h-4 w-4 text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-slate-600" />
                 </Link>
+
+                {/* ĐIỂM DANH */}
 
                 <Link
                   href="/diem-danh"
@@ -518,6 +537,8 @@ export default function Home() {
 
                   <ArrowRight className="h-4 w-4 text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-slate-600" />
                 </Link>
+
+                {/* HỌC PHÍ */}
 
                 <Link
                   href="/hoc-phi"
