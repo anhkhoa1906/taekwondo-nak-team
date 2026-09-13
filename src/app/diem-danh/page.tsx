@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+
 import {
   useAttendance,
   type AttendanceRecord,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { useStudents } from "@/context/student-context";
+import { useRole } from "@/hooks/use-role";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +43,7 @@ const statusOptions: AttendanceStatus[] = ["Có mặt", "Vắng", "Có phép"];
 
 export default function DiemDanhPage() {
   const { students } = useStudents();
+  const { isStaff } = useRole();
 
   const { getAttendance, saveAttendance } = useAttendance();
   const [selectedClass, setSelectedClass] = useState("");
@@ -335,21 +338,25 @@ export default function DiemDanhPage() {
         </div>
 
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={handleAttendanceAll}
-            disabled={classStudents.length === 0}
-          >
-            <Check className="mr-2 h-4 w-4" />
-            Điểm danh tất cả
-          </Button>
+          {!isStaff && (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleAttendanceAll}
+                disabled={classStudents.length === 0}
+              >
+                <Check className="mr-2 h-4 w-4" />
+                Điểm danh tất cả
+              </Button>
 
-          <Button
-            onClick={handleSaveAttendance}
-            disabled={classStudents.length === 0}
-          >
-            Lưu điểm danh
-          </Button>
+              <Button
+                onClick={handleSaveAttendance}
+                disabled={classStudents.length === 0}
+              >
+                Lưu điểm danh
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -420,6 +427,7 @@ export default function DiemDanhPage() {
                               type="button"
                               size="sm"
                               variant={active ? "default" : "outline"}
+                              disabled={isStaff}
                               onClick={() =>
                                 setAttendanceStatus(student.id, status)
                               }
@@ -435,6 +443,7 @@ export default function DiemDanhPage() {
                       <Input
                         placeholder="Ghi chú..."
                         value={attendance[student.id]?.note || ""}
+                        readOnly={isStaff}
                         onChange={(e) =>
                           setAttendanceNote(student.id, e.target.value)
                         }

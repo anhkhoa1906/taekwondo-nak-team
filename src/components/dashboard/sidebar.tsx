@@ -22,6 +22,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 import { useAuth } from "@/context/auth-context";
+import { useRole } from "@/hooks/use-role";
 
 type MenuItem = {
   label: string;
@@ -104,8 +105,8 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
 
-  const { user, signOut } = useAuth();
-
+  const { user, profile, signOut } = useAuth();
+  const { isStaff } = useRole();
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -119,6 +120,15 @@ export default function Sidebar() {
   }
 
   const email = user?.email ?? "Chưa đăng nhập";
+
+  const roleLabel =
+    profile?.role === "admin"
+      ? "Admin"
+      : profile?.role === "coach"
+        ? "Coach"
+        : profile?.role === "staff"
+          ? "Staff"
+          : "Chưa phân quyền";
 
   const initials = email.split("@")[0].slice(0, 2).toUpperCase();
 
@@ -268,6 +278,10 @@ export default function Sidebar() {
                 </p>
 
                 <p className="truncate text-xs text-slate-400">{email}</p>
+
+                <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                  {roleLabel}
+                </p>
               </div>
             )}
           </div>

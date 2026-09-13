@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Eye, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
 import { useStudents, type Student } from "@/context/student-context";
-
+import { useRole } from "@/hooks/use-role";
 import {
   Dialog,
   DialogContent,
@@ -77,6 +77,7 @@ function getStatusClass(status: string) {
 
 export default function StudentsPage() {
   const { students, addStudent, updateStudent, deleteStudent } = useStudents();
+  const { isStaff } = useRole();
 
   const [search, setSearch] = useState("");
   const [beltFilter, setBeltFilter] = useState("all");
@@ -278,243 +279,245 @@ export default function StudentsPage() {
         </div>
 
         {/* Add student */}
-        <Dialog open={open} onOpenChange={setOpen}>
-          <Button className="gap-2" onClick={handleOpenAddStudent}>
-            <Plus className="h-4 w-4" />
-            Thêm học viên
-          </Button>
+        {!isStaff && (
+          <Dialog open={open} onOpenChange={setOpen}>
+            <Button className="gap-2" onClick={handleOpenAddStudent}>
+              <Plus className="h-4 w-4" />
+              Thêm học viên
+            </Button>
 
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Thêm học viên</DialogTitle>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Thêm học viên</DialogTitle>
 
-              <DialogDescription>
-                Nhập thông tin học viên mới vào hệ thống.
-              </DialogDescription>
-            </DialogHeader>
+                <DialogDescription>
+                  Nhập thông tin học viên mới vào hệ thống.
+                </DialogDescription>
+              </DialogHeader>
 
-            <div className="grid gap-4 py-4 md:grid-cols-2">
-              {/* Họ tên */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Họ và tên <span className="text-red-500">*</span>
-                </label>
+              <div className="grid gap-4 py-4 md:grid-cols-2">
+                {/* Họ tên */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Họ và tên <span className="text-red-500">*</span>
+                  </label>
 
-                <Input
-                  placeholder="Nguyễn Văn A"
-                  value={newStudent.name}
-                  onChange={(e) =>
-                    setNewStudent({
-                      ...newStudent,
-                      name: e.target.value,
-                    })
-                  }
-                />
+                  <Input
+                    placeholder="Nguyễn Văn A"
+                    value={newStudent.name}
+                    onChange={(e) =>
+                      setNewStudent({
+                        ...newStudent,
+                        name: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                {/* Ngày sinh */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Ngày sinh <span className="text-red-500">*</span>
+                  </label>
+
+                  <Input
+                    type="date"
+                    value={newStudent.birthDate}
+                    onChange={(e) =>
+                      setNewStudent({
+                        ...newStudent,
+                        birthDate: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                {/* Giới tính */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Giới tính <span className="text-red-500">*</span>
+                  </label>
+
+                  <Select
+                    value={newStudent.gender}
+                    onValueChange={(value) =>
+                      setNewStudent({
+                        ...newStudent,
+                        gender: value ?? "",
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Chọn giới tính" />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      <SelectItem value="Nam">Nam</SelectItem>
+                      <SelectItem value="Nữ">Nữ</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Số điện thoại */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Số điện thoại <span className="text-red-500">*</span>
+                  </label>
+
+                  <Input
+                    placeholder="0901 234 567"
+                    value={newStudent.phone}
+                    onChange={(e) =>
+                      setNewStudent({
+                        ...newStudent,
+                        phone: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                {/* Địa chỉ */}
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-medium">Địa chỉ</label>
+
+                  <Input
+                    placeholder="Nhập địa chỉ"
+                    value={newStudent.address}
+                    onChange={(e) =>
+                      setNewStudent({
+                        ...newStudent,
+                        address: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                {/* Ngày tham gia */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Ngày tham gia <span className="text-red-500">*</span>
+                  </label>
+
+                  <Input
+                    type="date"
+                    value={newStudent.joinDate}
+                    onChange={(e) =>
+                      setNewStudent({
+                        ...newStudent,
+                        joinDate: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+
+                {/* Lớp học */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Lớp học</label>
+
+                  <Select
+                    value={newStudent.className}
+                    onValueChange={(value) =>
+                      setNewStudent({
+                        ...newStudent,
+                        className: value ?? "",
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Chọn lớp học" />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      {classOptions.map((item) => (
+                        <SelectItem key={item} value={item}>
+                          {item}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Cấp đai */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Cấp đai <span className="text-red-500">*</span>
+                  </label>
+
+                  <Select
+                    value={newStudent.belt}
+                    onValueChange={(value) =>
+                      setNewStudent({
+                        ...newStudent,
+                        belt: value ?? "",
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Chọn cấp đai" />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      {beltOptions.map((item) => (
+                        <SelectItem key={item} value={item}>
+                          {item}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Trạng thái */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Trạng thái</label>
+
+                  <Select
+                    value={newStudent.status}
+                    onValueChange={(value) =>
+                      setNewStudent({
+                        ...newStudent,
+                        status: value ?? "",
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      <SelectItem value="Đang tập">Đang tập</SelectItem>
+
+                      <SelectItem value="Hết hạn">Hết hạn</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Ghi chú */}
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-medium">Ghi chú</label>
+
+                  <Input
+                    placeholder="Nhập ghi chú nếu có"
+                    value={newStudent.note}
+                    onChange={(e) =>
+                      setNewStudent({
+                        ...newStudent,
+                        note: e.target.value,
+                      })
+                    }
+                  />
+                </div>
               </div>
 
-              {/* Ngày sinh */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Ngày sinh <span className="text-red-500">*</span>
-                </label>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setOpen(false)}>
+                  Hủy
+                </Button>
 
-                <Input
-                  type="date"
-                  value={newStudent.birthDate}
-                  onChange={(e) =>
-                    setNewStudent({
-                      ...newStudent,
-                      birthDate: e.target.value,
-                    })
-                  }
-                />
-              </div>
-
-              {/* Giới tính */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Giới tính <span className="text-red-500">*</span>
-                </label>
-
-                <Select
-                  value={newStudent.gender}
-                  onValueChange={(value) =>
-                    setNewStudent({
-                      ...newStudent,
-                      gender: value ?? "",
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Chọn giới tính" />
-                  </SelectTrigger>
-
-                  <SelectContent>
-                    <SelectItem value="Nam">Nam</SelectItem>
-                    <SelectItem value="Nữ">Nữ</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Số điện thoại */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Số điện thoại <span className="text-red-500">*</span>
-                </label>
-
-                <Input
-                  placeholder="0901 234 567"
-                  value={newStudent.phone}
-                  onChange={(e) =>
-                    setNewStudent({
-                      ...newStudent,
-                      phone: e.target.value,
-                    })
-                  }
-                />
-              </div>
-
-              {/* Địa chỉ */}
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-medium">Địa chỉ</label>
-
-                <Input
-                  placeholder="Nhập địa chỉ"
-                  value={newStudent.address}
-                  onChange={(e) =>
-                    setNewStudent({
-                      ...newStudent,
-                      address: e.target.value,
-                    })
-                  }
-                />
-              </div>
-
-              {/* Ngày tham gia */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Ngày tham gia <span className="text-red-500">*</span>
-                </label>
-
-                <Input
-                  type="date"
-                  value={newStudent.joinDate}
-                  onChange={(e) =>
-                    setNewStudent({
-                      ...newStudent,
-                      joinDate: e.target.value,
-                    })
-                  }
-                />
-              </div>
-
-              {/* Lớp học */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Lớp học</label>
-
-                <Select
-                  value={newStudent.className}
-                  onValueChange={(value) =>
-                    setNewStudent({
-                      ...newStudent,
-                      className: value ?? "",
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Chọn lớp học" />
-                  </SelectTrigger>
-
-                  <SelectContent>
-                    {classOptions.map((item) => (
-                      <SelectItem key={item} value={item}>
-                        {item}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Cấp đai */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Cấp đai <span className="text-red-500">*</span>
-                </label>
-
-                <Select
-                  value={newStudent.belt}
-                  onValueChange={(value) =>
-                    setNewStudent({
-                      ...newStudent,
-                      belt: value ?? "",
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Chọn cấp đai" />
-                  </SelectTrigger>
-
-                  <SelectContent>
-                    {beltOptions.map((item) => (
-                      <SelectItem key={item} value={item}>
-                        {item}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Trạng thái */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Trạng thái</label>
-
-                <Select
-                  value={newStudent.status}
-                  onValueChange={(value) =>
-                    setNewStudent({
-                      ...newStudent,
-                      status: value ?? "",
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-
-                  <SelectContent>
-                    <SelectItem value="Đang tập">Đang tập</SelectItem>
-
-                    <SelectItem value="Hết hạn">Hết hạn</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Ghi chú */}
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-medium">Ghi chú</label>
-
-                <Input
-                  placeholder="Nhập ghi chú nếu có"
-                  value={newStudent.note}
-                  onChange={(e) =>
-                    setNewStudent({
-                      ...newStudent,
-                      note: e.target.value,
-                    })
-                  }
-                />
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setOpen(false)}>
-                Hủy
-              </Button>
-
-              <Button onClick={handleAddStudent}>Lưu học viên</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+                <Button onClick={handleAddStudent}>Lưu học viên</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       {/* Edit student */}
@@ -892,23 +895,27 @@ export default function StudentsPage() {
                         <Eye className="h-4 w-4" />
                       </Button>
 
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Chỉnh sửa"
-                        onClick={() => handleEditStudent(student)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      {!isStaff && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Chỉnh sửa"
+                            onClick={() => handleEditStudent(student)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
 
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Xóa"
-                        onClick={() => handleDelete(student.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Xóa"
+                            onClick={() => handleDelete(student.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

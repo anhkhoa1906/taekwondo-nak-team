@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Award, Check, Eye, Search, ShieldCheck } from "lucide-react";
 
 import { useStudents } from "@/context/student-context";
+import { useRole } from "@/hooks/use-role";
 import { useBelt } from "@/context/belt-context";
 
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,7 @@ const beltOrder = ["Trắng", "Vàng", "Xanh", "Đỏ", "Đen"];
 
 export default function CapDaiPage() {
   const { students, updateStudent } = useStudents();
+  const { isStaff } = useRole();
 
   const { beltRecords, promoteStudent, getStudentBeltHistory } = useBelt();
 
@@ -290,7 +292,7 @@ export default function CapDaiPage() {
                           <span className="ml-1">Lịch sử</span>
                         </Button>
 
-                        {!isBlackBelt && (
+                        {!isBlackBelt && !isStaff && (
                           <Button
                             size="sm"
                             onClick={() => handleOpenPromotion(student.id)}

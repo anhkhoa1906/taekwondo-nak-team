@@ -5,6 +5,8 @@ import { useStudents } from "@/context/student-context";
 import { useClasses } from "@/context/class-context";
 import type { ClassItem } from "@/context/class-context";
 import { useCoaches } from "@/context/coach-context";
+import { useRole } from "@/hooks/use-role";
+
 import {
   Eye,
   Pencil,
@@ -68,6 +70,7 @@ export default function LopHocPage() {
   const { classes, addClass, updateClass, deleteClass } = useClasses();
 
   const { coaches } = useCoaches();
+  const { isStaff } = useRole();
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -280,10 +283,12 @@ export default function LopHocPage() {
           </p>
         </div>
 
-        <Button className="gap-2" onClick={handleOpenAddClass}>
-          <Plus className="h-4 w-4" />
-          Thêm lớp
-        </Button>
+        {!isStaff && (
+          <Button className="gap-2" onClick={handleOpenAddClass}>
+            <Plus className="h-4 w-4" />
+            Thêm lớp
+          </Button>
+        )}
       </div>
 
       {/* STATISTICS */}
@@ -446,23 +451,27 @@ export default function LopHocPage() {
                         <Eye className="h-4 w-4" />
                       </Button>
 
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Chỉnh sửa"
-                        onClick={() => handleEditClass(item)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      {!isStaff && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Chỉnh sửa"
+                            onClick={() => handleEditClass(item)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
 
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Xóa"
-                        onClick={() => handleDelete(item.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Xóa"
+                            onClick={() => handleDelete(item.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -719,14 +728,16 @@ export default function LopHocPage() {
                     </p>
                   </div>
 
-                  <Button
-                    size="sm"
-                    className="gap-2"
-                    onClick={() => setAddStudentOpen(true)}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Thêm học viên
-                  </Button>
+                  {!isStaff && (
+                    <Button
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => setAddStudentOpen(true)}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Thêm học viên
+                    </Button>
+                  )}
                 </div>
 
                 <div className="max-h-[250px] overflow-y-auto rounded-lg border">
@@ -754,19 +765,21 @@ export default function LopHocPage() {
                           </div>
                         </div>
 
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Xóa khỏi lớp"
-                          onClick={() => {
-                            updateStudent({
-                              ...student,
-                              className: "Chưa xếp lớp",
-                            });
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        {!isStaff && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Xóa khỏi lớp"
+                            onClick={() => {
+                              updateStudent({
+                                ...student,
+                                className: "Chưa xếp lớp",
+                              });
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     ))
                   )}

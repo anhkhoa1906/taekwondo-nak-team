@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { Save, Settings } from "lucide-react";
 import { useSettings } from "@/context/settings-context";
+import { useRole } from "@/hooks/use-role";
 
 export default function SettingsPage() {
   const { settings, updateSettings } = useSettings();
+  const { isStaff } = useRole();
 
   const [form, setForm] = useState(settings);
   const [saved, setSaved] = useState(false);
@@ -62,6 +64,7 @@ export default function SettingsPage() {
               <label className="mb-2 block text-sm font-medium">Tên CLB</label>
 
               <input
+                disabled={isStaff}
                 value={form.clubName}
                 onChange={(e) => handleChange("clubName", e.target.value)}
                 className="w-full rounded-lg border px-3 py-2 outline-none focus:border-slate-900"
@@ -73,6 +76,7 @@ export default function SettingsPage() {
               <label className="mb-2 block text-sm font-medium">Slogan</label>
 
               <input
+                disabled={isStaff}
                 value={form.slogan}
                 onChange={(e) => handleChange("slogan", e.target.value)}
                 className="w-full rounded-lg border px-3 py-2 outline-none focus:border-slate-900"
@@ -86,6 +90,7 @@ export default function SettingsPage() {
               </label>
 
               <input
+                disabled={isStaff}
                 value={form.phone}
                 onChange={(e) => handleChange("phone", e.target.value)}
                 className="w-full rounded-lg border px-3 py-2 outline-none focus:border-slate-900"
@@ -98,6 +103,7 @@ export default function SettingsPage() {
 
               <input
                 type="email"
+                disabled={isStaff}
                 value={form.email}
                 onChange={(e) => handleChange("email", e.target.value)}
                 className="w-full rounded-lg border px-3 py-2 outline-none focus:border-slate-900"
@@ -109,6 +115,7 @@ export default function SettingsPage() {
               <label className="mb-2 block text-sm font-medium">Địa chỉ</label>
 
               <input
+                disabled={isStaff}
                 value={form.address}
                 onChange={(e) => handleChange("address", e.target.value)}
                 className="w-full rounded-lg border px-3 py-2 outline-none focus:border-slate-900"
@@ -139,6 +146,7 @@ export default function SettingsPage() {
                 <input
                   type="number"
                   min={0}
+                  disabled={isStaff}
                   value={form.defaultTuition}
                   onChange={(e) =>
                     handleChange("defaultTuition", Number(e.target.value))
@@ -158,6 +166,7 @@ export default function SettingsPage() {
               </label>
 
               <input
+                disabled={isStaff}
                 value={form.defaultTrainingTime}
                 onChange={(e) =>
                   handleChange("defaultTrainingTime", e.target.value)
@@ -177,13 +186,15 @@ export default function SettingsPage() {
             </span>
           )}
 
-          <button
-            onClick={handleSave}
-            className="flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
-          >
-            <Save className="h-4 w-4" />
-            Lưu cài đặt
-          </button>
+          {!isStaff && (
+            <button
+              onClick={handleSave}
+              className="flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
+            >
+              <Save className="h-4 w-4" />
+              Lưu cài đặt
+            </button>
+          )}
         </div>
       </div>
     </div>

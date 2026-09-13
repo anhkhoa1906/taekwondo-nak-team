@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { useStudents } from "@/context/student-context";
+import { useRole } from "@/hooks/use-role";
 import { useTuition, type TuitionStatus } from "@/context/tuition-context";
 
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ function formatMoney(amount: number) {
 
 export default function HocPhiPage() {
   const { students } = useStudents();
+  const { isStaff } = useRole();
 
   const { getTuition, saveTuition } = useTuition();
 
@@ -337,25 +339,27 @@ export default function HocPhiPage() {
                     </TableCell>
 
                     <TableCell>
-                      <div className="flex justify-end gap-2">
-                        {status !== "Đã đóng" ? (
-                          <Button
-                            size="sm"
-                            onClick={() => handleMarkAsPaid(student.id)}
-                          >
-                            <CreditCard className="mr-2 h-4 w-4" />
-                            Đã đóng
-                          </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleMarkAsUnpaid(student.id)}
-                          >
-                            Hoàn tác
-                          </Button>
-                        )}
-                      </div>
+                      {!isStaff && (
+                        <div className="flex justify-end gap-2">
+                          {status !== "Đã đóng" ? (
+                            <Button
+                              size="sm"
+                              onClick={() => handleMarkAsPaid(student.id)}
+                            >
+                              <CreditCard className="mr-2 h-4 w-4" />
+                              Đã đóng
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleMarkAsUnpaid(student.id)}
+                            >
+                              Hoàn tác
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

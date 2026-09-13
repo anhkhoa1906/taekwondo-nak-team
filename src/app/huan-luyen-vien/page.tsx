@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Eye, Pencil, Plus, Search, Trash2, Users } from "lucide-react";
 
 import { useCoaches, type Coach } from "@/context/coach-context";
+import { useRole } from "@/hooks/use-role";
 import { useClasses } from "@/context/class-context";
 
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +43,7 @@ const emptyCoach = {
 
 export default function HuanLuyenVienPage() {
   const { coaches, addCoach, updateCoach, deleteCoach } = useCoaches();
+  const { isStaff } = useRole();
 
   const { classes } = useClasses();
 
@@ -160,10 +162,12 @@ export default function HuanLuyenVienPage() {
           </p>
         </div>
 
-        <Button onClick={handleOpenAdd}>
-          <Plus size={18} />
-          <span className="ml-2">Thêm HLV</span>
-        </Button>
+        {!isStaff && (
+          <Button onClick={handleOpenAdd}>
+            <Plus size={18} />
+            <span className="ml-2">Thêm HLV</span>
+          </Button>
+        )}
       </div>
 
       {/* Stats */}
@@ -297,21 +301,25 @@ export default function HuanLuyenVienPage() {
                         <Eye size={16} />
                       </Button>
 
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleOpenEdit(coach)}
-                      >
-                        <Pencil size={16} />
-                      </Button>
+                      {!isStaff && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenEdit(coach)}
+                          >
+                            <Pencil size={16} />
+                          </Button>
 
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDelete(coach)}
-                      >
-                        <Trash2 size={16} className="text-red-500" />
-                      </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDelete(coach)}
+                          >
+                            <Trash2 size={16} className="text-red-500" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
