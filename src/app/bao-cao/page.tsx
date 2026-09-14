@@ -12,6 +12,7 @@ import {
 import { useStudents } from "@/context/student-context";
 import { useTuition } from "@/context/tuition-context";
 import { useAttendance } from "@/context/attendance-context";
+import { useClub } from "@/context/club-context";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,8 @@ export default function BaoCaoPage() {
   const { students } = useStudents();
   const { getAllTuition } = useTuition();
   const { getAttendance } = useAttendance();
+  const { club } = useClub();
+  const isStaff = club?.role === "staff";
 
   const [reportType, setReportType] = useState("Học viên");
 
@@ -415,11 +418,13 @@ export default function BaoCaoPage() {
               value={paidTuition.length}
             />
 
-            <SummaryCard
-              icon={CreditCard}
-              title="Doanh thu"
-              value={`${formatMoney(revenue)} đ`}
-            />
+            {!isStaff && (
+              <SummaryCard
+                icon={CreditCard}
+                title="Doanh thu"
+                value={`${formatMoney(revenue)} đ`}
+              />
+            )}
           </div>
 
           <ReportTable>

@@ -25,8 +25,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Taekwondo NAK Team",
-  description: "Hệ thống quản lý CLB Taekwondo",
+  title: "NAK TAEKWONDO SYSTEM",
+  description: "Hệ thống quản lý câu lạc bộ Taekwondo",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

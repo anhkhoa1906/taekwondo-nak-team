@@ -500,7 +500,11 @@ export default function HocPhiPage() {
           SUMMARY
       ========================================== */}
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div
+        className={`mb-6 grid gap-4 sm:grid-cols-2 ${
+          isStaff ? "xl:grid-cols-4" : "xl:grid-cols-5"
+        }`}
+      >
         <SummaryCard
           title="Học viên"
           value={String(tuitionStudents.length)}
@@ -509,43 +513,41 @@ export default function HocPhiPage() {
           iconClassName="bg-slate-100"
         />
 
-        <SummaryCard
-          title="Phải thu"
-          value={
-            isFutureMonth || isCurrentMonth
-              ? formatMoney(stats.totalAmount)
-              : formatMoney(stats.totalAmount)
-          }
-          description={
-            isFutureMonth
-              ? `${notCreatedCount} chưa lập`
-              : isCurrentMonth
-                ? `${notCreatedCount} chưa lập`
-                : "Tổng học phí của kỳ"
-          }
-          icon={<DollarSign className="h-5 w-5 text-slate-700" />}
-          iconClassName="bg-slate-100"
-        />
+        {!isStaff && (
+          <SummaryCard
+            title="Phải thu"
+            value={isFutureMonth ? "0 đ" : formatMoney(stats.totalAmount)}
+            description={
+              isFutureMonth
+                ? `${stats.notCreatedCount} chưa lập`
+                : isCurrentMonth
+                  ? `${stats.notCreatedCount} chưa lập`
+                  : "Tổng học phí của kỳ"
+            }
+            icon={<DollarSign className="h-5 w-5 text-slate-700" />}
+            iconClassName="bg-slate-100"
+          />
+        )}
 
         <SummaryCard
-          title="Đã thu"
-          value={formatMoney(stats.paidAmount)}
+          title="Đã đóng"
+          value={String(stats.paidCount)}
           description={`${stats.paidCount} học viên đã đóng`}
           icon={<CheckCircle2 className="h-5 w-5 text-green-600" />}
           iconClassName="bg-green-50"
         />
 
         <SummaryCard
-          title="Còn thu"
-          value={formatMoney(stats.unpaidAmount + stats.overdueAmount)}
-          description={`${stats.unpaidCount + stats.overdueCount} học viên chưa thanh toán`}
+          title="Chưa đóng"
+          value={String(stats.unpaidCount)}
+          description={`${stats.unpaidCount} học viên chưa đóng`}
           icon={<Wallet className="h-5 w-5 text-amber-600" />}
           iconClassName="bg-amber-50"
         />
 
         <SummaryCard
           title="Quá hạn"
-          value={formatMoney(stats.overdueAmount)}
+          value={String(stats.overdueCount)}
           description={`${stats.overdueCount} học viên`}
           icon={<XCircle className="h-5 w-5 text-red-600" />}
           iconClassName="bg-red-50"
@@ -727,8 +729,12 @@ export default function HocPhiPage() {
 
                       {/* HỌC PHÍ */}
 
-                      <td className="px-4 py-4 font-medium text-slate-700">
-                        {amount > 0 ? formatMoney(amount) : "-"}
+                      <td className="px-4 py-4">
+                        {isStaff ? (
+                          <span className="text-slate-400">Ẩn</span>
+                        ) : (
+                          formatMoney(amount)
+                        )}
                       </td>
 
                       {/* HẠN ĐÓNG */}

@@ -16,6 +16,7 @@ import { useStudents } from "@/context/student-context";
 import { useAttendance } from "@/context/attendance-context";
 import { useTuition } from "@/context/tuition-context";
 import { BELT_LEVELS } from "@/context/belt-context";
+import { useClub } from "@/context/club-context";
 
 import {
   BarChart,
@@ -37,6 +38,8 @@ export default function ThongKePage() {
   const { students } = useStudents();
   const { getAttendance } = useAttendance();
   const { getAllTuition } = useTuition();
+  const { club } = useClub();
+  const isStaff = club?.role === "staff";
 
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0],
@@ -276,12 +279,14 @@ export default function ThongKePage() {
           icon={CreditCard}
         />
 
-        <StatCard
-          title="Doanh thu"
-          value={`${formatMoney(totalRevenue)} đ`}
-          description={`Tháng ${selectedMonth}`}
-          icon={Wallet}
-        />
+        {!isStaff && (
+          <StatCard
+            title="Doanh thu"
+            value={`${formatMoney(totalRevenue)} đ`}
+            description={`Tháng ${selectedMonth}`}
+            icon={Wallet}
+          />
+        )}
       </div>
 
       {/* ==========================================
@@ -490,10 +495,12 @@ export default function ThongKePage() {
 
             <SummaryBox label="Chưa đóng" value={unpaidTuition.length} />
 
-            <SummaryBox
-              label="Còn thu"
-              value={`${formatMoney(unpaidAmount)} đ`}
-            />
+            {!isStaff && (
+              <SummaryBox
+                label="Còn thu"
+                value={`${formatMoney(unpaidAmount)} đ`}
+              />
+            )}
           </div>
         </ChartCard>
       </div>

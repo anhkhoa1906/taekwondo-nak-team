@@ -36,6 +36,8 @@ export default function Home() {
 
   const { club } = useClub();
 
+  const isStaff = club?.role === "staff";
+
   // =====================================================
   // TÊN CLB HIỆN TẠI
   // =====================================================
@@ -246,19 +248,23 @@ export default function Home() {
                   icon={UserX}
                 />
 
-                <StatCard
-                  title="Doanh thu học phí"
-                  value={`${formatMoney(paidTuition)}đ`}
-                  description="Học phí đã thu trong tháng này"
-                  icon={CircleDollarSign}
-                />
+                {!isStaff && (
+                  <>
+                    <StatCard
+                      title="Doanh thu học phí"
+                      value={`${formatMoney(paidTuition)}đ`}
+                      description="Học phí đã thu trong tháng này"
+                      icon={CircleDollarSign}
+                    />
 
-                <StatCard
-                  title="Học phí chưa thu"
-                  value={`${formatMoney(unpaidTuition)}đ`}
-                  description="Học phí chưa thu trong tháng này"
-                  icon={Wallet}
-                />
+                    <StatCard
+                      title="Học phí chưa thu"
+                      value={`${formatMoney(unpaidTuition)}đ`}
+                      description="Học phí chưa thu trong tháng này"
+                      icon={Wallet}
+                    />
+                  </>
+                )}
 
                 <StatCard
                   title="Điểm danh hôm nay"
@@ -370,14 +376,21 @@ export default function Home() {
                 </div>
 
                 <p className="mt-4 text-sm font-medium text-slate-500">
-                  Học phí đã thu
+                  Học phí
                 </p>
 
                 <p className="mt-1 text-2xl font-bold text-slate-900">
-                  {formatMoney(paidTuition)}đ
+                  {isStaff
+                    ? monthTuition.filter((item) => item.status === "Đã đóng")
+                        .length
+                    : `${formatMoney(paidTuition)}đ`}
                 </p>
 
-                <p className="mt-1 text-xs text-slate-400">Tháng hiện tại</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {isStaff
+                    ? "Học viên đã đóng tháng hiện tại"
+                    : "Tháng hiện tại"}
+                </p>
               </Link>
             </section>
 
