@@ -131,12 +131,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) {
         return;
       }
 
-      setUser(session?.user ?? null);
+      // Không reload lại toàn bộ user/profile khi Supabase
+      // chỉ đang refresh access token lúc quay lại tab.
+      if (event === "TOKEN_REFRESHED") {
+        return;
+      }
+
+      const nextUser = session?.user ?? null;
+
+      setUser((currentUser) => {
+        // Cùng một tài khoản thì giữ nguyên object hiện tại.
+        // Tránh làm các useEffect([user]) chạy lại không cần thiết.
+        if (currentUser?.id === nextUser?.id) {
+          return currentUser;
+        }
+
+        return nextUser;
+      });
     });
 
     // -----------------------------------------------

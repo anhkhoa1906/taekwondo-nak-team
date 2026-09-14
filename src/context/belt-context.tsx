@@ -7,6 +7,7 @@ import {
   useEffect,
   useState,
 } from "react";
+
 import { createClient } from "@/lib/supabase/client";
 import { useClub } from "@/context/club-context";
 
@@ -20,37 +21,91 @@ export type BeltRecord = {
   coach: string;
   note: string;
 };
+
 export const BELT_LEVELS = [
-  { name: "Trắng", color: "#F8FAFC" },
-  { name: "Trắng 1 vạch", color: "#E2E8F0" },
-  { name: "Trắng 2 vạch", color: "#CBD5E1" },
-  { name: "Vàng", color: "#FACC15" },
-  { name: "Xanh lá", color: "#22C55E" },
-  { name: "Xanh dương", color: "#3B82F6" },
-  { name: "Đỏ cấp 4", color: "#EF4444" },
-  { name: "Đỏ cấp 3", color: "#DC2626" },
-  { name: "Đỏ cấp 2", color: "#B91C1C" },
-  { name: "Đỏ cấp 1", color: "#991B1B" },
-  { name: "Đen", color: "#18181B" },
+  {
+    name: "Trắng",
+    color: "#F8FAFC",
+  },
+  {
+    name: "Trắng 1 vạch",
+    color: "#E2E8F0",
+  },
+  {
+    name: "Trắng 2 vạch",
+    color: "#CBD5E1",
+  },
+  {
+    name: "Vàng",
+    color: "#FACC15",
+  },
+  {
+    name: "Xanh lá",
+    color: "#22C55E",
+  },
+  {
+    name: "Xanh dương",
+    color: "#3B82F6",
+  },
+  {
+    name: "Đỏ cấp 4",
+    color: "#EF4444",
+  },
+  {
+    name: "Đỏ cấp 3",
+    color: "#DC2626",
+  },
+  {
+    name: "Đỏ cấp 2",
+    color: "#B91C1C",
+  },
+  {
+    name: "Đỏ cấp 1",
+    color: "#991B1B",
+  },
+  {
+    name: "Đen",
+    color: "#18181B",
+  },
 ] as const;
 
 export const BELT_NAMES = BELT_LEVELS.map((belt) => belt.name);
 
+// =====================================================
+// CONTEXT TYPE
+// =====================================================
+
+type PromoteResult = {
+  error: string | null;
+};
+
 type BeltContextType = {
   beltRecords: BeltRecord[];
-  promoteStudent: (record: BeltRecord) => Promise<void>;
+
+  promoteStudent: (record: BeltRecord) => Promise<PromoteResult>;
+
+  promoteStudents: (records: BeltRecord[]) => Promise<PromoteResult>;
+
   getStudentBeltHistory: (studentId: number) => BeltRecord[];
 };
+
+// =====================================================
+// DATABASE ROW
+// =====================================================
 
 type BeltRow = {
   id: number;
   club_id: string;
   student_id: number;
+
   from_belt: string | null;
   to_belt: string | null;
+
   promotion_date: string | null;
+
   coach: string | null;
   note: string | null;
+
   students:
     | {
         name: string;
@@ -61,7 +116,15 @@ type BeltRow = {
     | null;
 };
 
+// =====================================================
+// CONTEXT
+// =====================================================
+
 const BeltContext = createContext<BeltContextType | undefined>(undefined);
+
+// =====================================================
+// DATE DISPLAY
+// =====================================================
 
 function formatDateForDisplay(date: string | null) {
   if (!date) return "";
@@ -74,6 +137,10 @@ function formatDateForDisplay(date: string | null) {
 
   return `${day}/${month}/${year}`;
 }
+
+// =====================================================
+// DATE DATABASE
+// =====================================================
 
 function formatDateForDatabase(date: string) {
   if (!date) return null;
@@ -89,29 +156,44 @@ function formatDateForDatabase(date: string) {
   return date;
 }
 
+// =====================================================
+// MAP
+// =====================================================
+
 function mapBelt(row: BeltRow): BeltRecord {
   const student = Array.isArray(row.students) ? row.students[0] : row.students;
 
   return {
     id: row.id,
+
     studentId: row.student_id,
+
     studentName: student?.name ?? "",
+
     fromBelt: row.from_belt ?? "",
+
     toBelt: row.to_belt ?? "",
+
     date: formatDateForDisplay(row.promotion_date),
+
     coach: row.coach ?? "",
+
     note: row.note ?? "",
   };
 }
+
+// =====================================================
+// PROVIDER
+// =====================================================
 
 export function BeltProvider({ children }: { children: React.ReactNode }) {
   const { club, loading: clubLoading } = useClub();
 
   const [beltRecords, setBeltRecords] = useState<BeltRecord[]>([]);
 
-  // ==========================================
-  // Tải lịch sử cấp đai của CLB hiện tại
-  // ==========================================
+  // ===================================================
+  // LOAD BELT RECORDS
+  // ===================================================
 
   const loadBeltRecords = useCallback(async () => {
     if (!club?.id) {
@@ -125,14 +207,16 @@ export function BeltProvider({ children }: { children: React.ReactNode }) {
       .from("belt_history")
       .select(
         `
-        *,
-        students (
-          name
-        )
-      `,
+          *,
+          students (
+            name
+          )
+        `,
       )
       .eq("club_id", club.id)
-      .order("promotion_date", { ascending: false });
+      .order("promotion_date", {
+        ascending: false,
+      });
 
     if (error) {
       console.error("Lỗi tải lịch sử cấp đai:", error);
@@ -142,21 +226,30 @@ export function BeltProvider({ children }: { children: React.ReactNode }) {
     setBeltRecords((data as BeltRow[]).map(mapBelt));
   }, [club?.id]);
 
+  // ===================================================
+  // LOAD WHEN CLUB CHANGES
+  // ===================================================
+
   useEffect(() => {
     if (clubLoading) return;
 
     loadBeltRecords();
   }, [clubLoading, loadBeltRecords]);
 
-  // ==========================================
-  // Thêm lịch sử cấp đai
-  // ==========================================
+  // ===================================================
+  // PROMOTE ONE STUDENT
+  // ===================================================
 
   const promoteStudent = useCallback(
-    async (record: BeltRecord) => {
+    async (record: BeltRecord): Promise<PromoteResult> => {
       if (!club?.id) {
-        console.error("Không xác định được CLB hiện tại.");
-        return;
+        const error = "Không xác định được CLB hiện tại.";
+
+        console.error(error);
+
+        return {
+          error,
+        };
       }
 
       const supabase = createClient();
@@ -165,11 +258,17 @@ export function BeltProvider({ children }: { children: React.ReactNode }) {
         .from("belt_history")
         .insert({
           club_id: club.id,
+
           student_id: record.studentId,
+
           from_belt: record.fromBelt,
+
           to_belt: record.toBelt,
+
           promotion_date: formatDateForDatabase(record.date),
+
           coach: record.coach,
+
           note: record.note,
         })
         .select(
@@ -184,17 +283,101 @@ export function BeltProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error("Lỗi lưu lịch sử cấp đai:", error);
-        return;
+
+        return {
+          error: error.message || "Không thể lưu lịch sử cấp đai.",
+        };
       }
 
       setBeltRecords((prev) => [mapBelt(data as BeltRow), ...prev]);
+
+      return {
+        error: null,
+      };
     },
     [club?.id],
   );
 
-  // ==========================================
-  // Lấy lịch sử của một học viên
-  // ==========================================
+  // ===================================================
+  // PROMOTE MANY STUDENTS
+  // ===================================================
+
+  const promoteStudents = useCallback(
+    async (records: BeltRecord[]): Promise<PromoteResult> => {
+      if (!club?.id) {
+        const error = "Không xác định được CLB hiện tại.";
+
+        console.error(error);
+
+        return {
+          error,
+        };
+      }
+
+      if (records.length === 0) {
+        return {
+          error: null,
+        };
+      }
+
+      const supabase = createClient();
+
+      /*
+       * Chuyển toàn bộ lịch sử cấp đai
+       * thành một lần insert.
+       */
+      const insertRows = records.map((record) => ({
+        club_id: club.id,
+
+        student_id: record.studentId,
+
+        from_belt: record.fromBelt,
+
+        to_belt: record.toBelt,
+
+        promotion_date: formatDateForDatabase(record.date),
+
+        coach: record.coach,
+
+        note: record.note,
+      }));
+
+      const { data, error } = await supabase
+        .from("belt_history")
+        .insert(insertRows)
+        .select(
+          `
+            *,
+            students (
+              name
+            )
+          `,
+        );
+
+      if (error) {
+        console.error("Lỗi lưu lịch sử thăng đai hàng loạt:", error);
+
+        return {
+          error: error.message || "Không thể lưu lịch sử cấp đai.",
+        };
+      }
+
+      if (data) {
+        const mapped = (data as BeltRow[]).map(mapBelt);
+
+        setBeltRecords((prev) => [...mapped, ...prev]);
+      }
+
+      return {
+        error: null,
+      };
+    },
+    [club?.id],
+  );
+
+  // ===================================================
+  // HISTORY OF ONE STUDENT
+  // ===================================================
 
   const getStudentBeltHistory = useCallback(
     (studentId: number) => {
@@ -203,11 +386,19 @@ export function BeltProvider({ children }: { children: React.ReactNode }) {
     [beltRecords],
   );
 
+  // ===================================================
+  // PROVIDER
+  // ===================================================
+
   return (
     <BeltContext.Provider
       value={{
         beltRecords,
+
         promoteStudent,
+
+        promoteStudents,
+
         getStudentBeltHistory,
       }}
     >
@@ -215,6 +406,10 @@ export function BeltProvider({ children }: { children: React.ReactNode }) {
     </BeltContext.Provider>
   );
 }
+
+// =====================================================
+// HOOK
+// =====================================================
 
 export function useBelt() {
   const context = useContext(BeltContext);

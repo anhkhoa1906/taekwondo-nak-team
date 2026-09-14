@@ -212,6 +212,8 @@ export default function StudentsPage() {
 
   const [beltFilter, setBeltFilter] = useState("all");
 
+  const [beltSort, setBeltSort] = useState<"none" | "asc" | "desc">("none");
+
   const [classFilter, setClassFilter] = useState("all");
 
   const [statusFilter, setStatusFilter] = useState("all");
@@ -235,8 +237,23 @@ export default function StudentsPage() {
   // ===================================================
 
   const filteredStudents = useMemo(() => {
-    return students.filter((student) => {
-      const keyword = search.toLowerCase();
+    // Thứ tự cấp đai từ thấp → cao
+    const beltOrder: Record<string, number> = {
+      Trắng: 1,
+      "Trắng 1 vạch": 2,
+      "Trắng 2 vạch": 3,
+      Vàng: 4,
+      "Xanh lá": 5,
+      "Xanh dương": 6,
+      "Đỏ cấp 4": 7,
+      "Đỏ cấp 3": 8,
+      "Đỏ cấp 2": 9,
+      "Đỏ cấp 1": 10,
+      Đen: 11,
+    };
+
+    const result = students.filter((student) => {
+      const keyword = search.toLowerCase().trim();
 
       const matchesSearch =
         student.name.toLowerCase().includes(keyword) ||
@@ -252,7 +269,24 @@ export default function StudentsPage() {
 
       return matchesSearch && matchesBelt && matchesClass && matchesStatus;
     });
-  }, [students, search, beltFilter, classFilter, statusFilter]);
+
+    // Không sắp xếp
+    if (beltSort === "none") {
+      return result;
+    }
+
+    // Sắp xếp theo cấp đai
+    return [...result].sort((a, b) => {
+      const beltA = beltOrder[a.belt] ?? 0;
+      const beltB = beltOrder[b.belt] ?? 0;
+
+      if (beltSort === "asc") {
+        return beltA - beltB;
+      }
+
+      return beltB - beltA;
+    });
+  }, [students, search, beltFilter, beltSort, classFilter, statusFilter]);
 
   // ===================================================
   // ADD
@@ -880,7 +914,9 @@ export default function StudentsPage() {
       {/* FILTER */}
 
       <div className="rounded-xl border bg-white p-4 shadow-sm">
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {/* SEARCH */}
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
 
@@ -891,6 +927,8 @@ export default function StudentsPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+
+          {/* BELT FILTER */}
 
           <Select
             value={beltFilter}
@@ -911,6 +949,29 @@ export default function StudentsPage() {
             </SelectContent>
           </Select>
 
+          {/* BELT SORT */}
+
+          <Select
+            value={beltSort}
+            onValueChange={(value) =>
+              setBeltSort((value as "none" | "asc" | "desc") ?? "none")
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Sắp xếp cấp đai" />
+            </SelectTrigger>
+
+            <SelectContent>
+              <SelectItem value="none">Không sắp xếp</SelectItem>
+
+              <SelectItem value="desc">Cấp đai cao → thấp</SelectItem>
+
+              <SelectItem value="asc">Cấp đai thấp → cao</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* CLASS */}
+
           <Select
             value={classFilter}
             onValueChange={(value) => setClassFilter(value ?? "all")}
@@ -929,6 +990,8 @@ export default function StudentsPage() {
               ))}
             </SelectContent>
           </Select>
+
+          {/* STATUS */}
 
           <Select
             value={statusFilter}
@@ -1029,6 +1092,8 @@ export default function StudentsPage() {
 
                   <TableCell>
                     <div className="flex justify-end gap-1">
+                      {/* VIEW */}
+
                       <Button
                         variant="ghost"
                         size="icon"
@@ -1037,6 +1102,8 @@ export default function StudentsPage() {
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
+
+                      {/* EDIT / DELETE */}
 
                       {!isStaff && (
                         <>

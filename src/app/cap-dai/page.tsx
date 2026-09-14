@@ -1,26 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import {
-  Award,
-  CalendarDays,
-  Check,
-  ChevronRight,
-  Eye,
-  History,
-  Search,
-  ShieldCheck,
-  UserRound,
-  Users,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
-import { useStudents } from "@/context/student-context";
-import { useRole } from "@/hooks/use-role";
 import { BELT_LEVELS, BELT_NAMES, useBelt } from "@/context/belt-context";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Student, useStudents } from "@/context/student-context";
+
+import { useClub } from "@/context/club-context";
+
+import {
+  Award,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  GraduationCap,
+  Search,
+  Users,
+  X,
+} from "lucide-react";
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 import {
   Table,
@@ -31,14 +32,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+
+import { Button } from "@/components/ui/button";
+
+import { Badge } from "@/components/ui/badge";
 
 import {
   Select,
@@ -48,872 +46,1385 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const beltOrder: string[] = [...BELT_NAMES];
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
-function getBeltClass(belt: string) {
-  switch (belt) {
-    case "Trắng":
-      return "border-slate-300 bg-slate-50 text-slate-700";
+/* =====================================================
+   TYPE
+===================================================== */
 
-    case "Trắng 1 vạch":
-      return "border-slate-300 bg-slate-100 text-slate-700";
+type ExamResult = "Đạt" | "Không đạt" | null;
 
-    case "Trắng 2 vạch":
-      return "border-slate-300 bg-slate-200 text-slate-700";
+type ExamStudent = Student & {
+  thiCap: boolean;
+  ketQuaThiCap: ExamResult;
+};
 
-    case "Vàng":
-      return "border-yellow-300 bg-yellow-100 text-yellow-700";
+/* =====================================================
+   BELT LEVEL
+===================================================== */
 
-    case "Xanh lá":
-      return "border-green-300 bg-green-100 text-green-700";
+function getBeltLevel(belt: string) {
+  const index = BELT_NAMES.indexOf(belt.trim() as (typeof BELT_NAMES)[number]);
 
-    case "Xanh dương":
-      return "border-blue-300 bg-blue-100 text-blue-700";
-
-    case "Đỏ cấp 4":
-      return "border-red-300 bg-red-100 text-red-700";
-
-    case "Đỏ cấp 3":
-      return "border-red-400 bg-red-200 text-red-700";
-
-    case "Đỏ cấp 2":
-      return "border-red-500 bg-red-300 text-red-800";
-
-    case "Đỏ cấp 1":
-      return "border-red-600 bg-red-400 text-red-900";
-
-    case "Đen":
-      return "border-slate-800 bg-slate-800 text-white";
-
-    default:
-      return "border-slate-200 bg-slate-50 text-slate-600";
-  }
+  return index === -1 ? 0 : index;
 }
 
-function getBeltColor(belt: string) {
-  return BELT_LEVELS.find((item) => item.name === belt)?.color ?? "#CBD5E1";
-}
+/* =====================================================
+   NEXT BELT
+===================================================== */
 
-function getInitials(name: string) {
-  const words = name.trim().split(/\s+/);
+function getNextBelt(belt: string) {
+  const currentIndex = getBeltLevel(belt);
 
-  if (words.length === 1) {
-    return words[0].slice(0, 2).toUpperCase();
+  if (currentIndex < 0 || currentIndex >= BELT_NAMES.length - 1) {
+    return null;
   }
 
-  return (words[0].charAt(0) + words[words.length - 1].charAt(0)).toUpperCase();
+  return BELT_NAMES[currentIndex + 1];
 }
 
-function formatDate(date: string) {
-  if (!date) return "";
+/* =====================================================
+   DATE
+===================================================== */
 
-  const [year, month, day] = date.split("-");
-
-  if (!year || !month || !day) {
-    return date;
-  }
-
-  return `${day}/${month}/${year}`;
+function getTodayDatabaseDate() {
+  return new Date().toISOString().split("T")[0];
 }
+
+/* =====================================================
+   CSV
+===================================================== */
+
+function escapeCsv(value: unknown) {
+  const text = String(value ?? "");
+
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+/* =====================================================
+   PAGE
+===================================================== */
 
 export default function CapDaiPage() {
-  const { students, updateStudent } = useStudents();
-  const { isStaff } = useRole();
+  const supabase = createClient();
 
-  const { beltRecords, promoteStudent, getStudentBeltHistory } = useBelt();
+  const { students, refreshStudents } = useStudents();
+
+  const { beltRecords, promoteStudent, promoteStudents } = useBelt();
+
+  const { club, canManage } = useClub();
+
+  /*
+   * Staff hoặc Coach view-only
+   */
+  const isStaff = club?.role === "staff";
+
+  const canEdit = !isStaff && canManage;
+
+  /* ===================================================
+     FILTER
+  =================================================== */
 
   const [search, setSearch] = useState("");
+
   const [beltFilter, setBeltFilter] = useState("all");
 
-  const [open, setOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [examFilter, setExamFilter] = useState("all");
 
-  const [selectedStudentId, setSelectedStudentId] = useState<number | null>(
-    null,
-  );
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
-  const [newBelt, setNewBelt] = useState("");
-  const [promotionDate, setPromotionDate] = useState(
-    new Date().toISOString().split("T")[0],
-  );
+  /* ===================================================
+     EXAM DATA
+     
+     Lấy trực tiếp từ StudentContext.
+     StudentContext đã map:
+     
+     thi_cap
+     ket_qua_thi_cap
+  =================================================== */
 
-  const [coach, setCoach] = useState("");
-  const [note, setNote] = useState("");
+  const examStudents = useMemo<ExamStudent[]>(() => {
+    return students.map((student) => ({
+      ...student,
 
-  const selectedStudent = students.find(
-    (student) => student.id === selectedStudentId,
-  );
+      thiCap: student.thiCap ?? false,
 
-  /*
-   * =========================
-   * STATS
-   * =========================
-   */
-
-  const stats = useMemo(() => {
-    const total = students.length;
-
-    const white = students.filter((student) =>
-      ["Trắng", "Trắng 1 vạch", "Trắng 2 vạch"].includes(student.belt),
-    ).length;
-
-    const color = students.filter((student) =>
-      [
-        "Vàng",
-        "Xanh lá",
-        "Xanh dương",
-        "Đỏ cấp 4",
-        "Đỏ cấp 3",
-        "Đỏ cấp 2",
-        "Đỏ cấp 1",
-      ].includes(student.belt),
-    ).length;
-
-    const black = students.filter((student) => student.belt === "Đen").length;
-
-    return {
-      total,
-      white,
-      color,
-      black,
-    };
+      ketQuaThiCap: student.ketQuaThiCap ?? null,
+    }));
   }, [students]);
 
-  /*
-   * =========================
-   * FILTER
-   * =========================
-   */
+  /* ===================================================
+     FILTERED STUDENTS
+  =================================================== */
 
   const filteredStudents = useMemo(() => {
     const keyword = search.trim().toLowerCase();
 
-    return students.filter((student) => {
-      const matchesSearch =
-        !keyword ||
-        student.name.toLowerCase().includes(keyword) ||
-        String(student.phone ?? "")
-          .toLowerCase()
-          .includes(keyword);
+    let result = [...examStudents];
 
-      const matchesBelt = beltFilter === "all" || student.belt === beltFilter;
+    /* SEARCH */
 
-      return matchesSearch && matchesBelt;
+    if (keyword) {
+      result = result.filter(
+        (student) =>
+          student.name.toLowerCase().includes(keyword) ||
+          student.phone.toLowerCase().includes(keyword) ||
+          student.className.toLowerCase().includes(keyword),
+      );
+    }
+
+    /* BELT */
+
+    if (beltFilter !== "all") {
+      result = result.filter((student) => student.belt.trim() === beltFilter);
+    }
+
+    /* EXAM */
+
+    if (examFilter === "exam") {
+      result = result.filter((student) => student.thiCap);
+    }
+
+    if (examFilter === "not-exam") {
+      result = result.filter((student) => !student.thiCap);
+    }
+
+    /* SORT */
+
+    result.sort((a, b) => {
+      const levelA = getBeltLevel(a.belt);
+
+      const levelB = getBeltLevel(b.belt);
+
+      if (sortOrder === "asc") {
+        return levelA - levelB;
+      }
+
+      return levelB - levelA;
     });
-  }, [students, search, beltFilter]);
 
-  /*
-   * =========================
-   * OPEN PROMOTION
-   * =========================
-   */
+    return result;
+  }, [examStudents, search, beltFilter, examFilter, sortOrder]);
 
-  function handleOpenPromotion(studentId: number) {
-    const student = students.find((item) => item.id === studentId);
+  /* ===================================================
+     STATISTICS
+  =================================================== */
 
-    if (!student) return;
+  const totalStudents = examStudents.length;
 
-    setSelectedStudentId(studentId);
+  const totalExam = examStudents.filter((student) => student.thiCap).length;
 
-    const currentIndex = beltOrder.indexOf(student.belt);
+  const totalPassed = examStudents.filter(
+    (student) => student.thiCap && student.ketQuaThiCap === "Đạt",
+  ).length;
 
-    const nextBelt =
-      currentIndex >= 0 && currentIndex < beltOrder.length - 1
-        ? beltOrder[currentIndex + 1]
-        : "";
+  const totalFailed = examStudents.filter(
+    (student) => student.thiCap && student.ketQuaThiCap === "Không đạt",
+  ).length;
 
-    setNewBelt(nextBelt);
+  /* ===================================================
+     BULK EXAM
+  =================================================== */
 
-    setPromotionDate(new Date().toISOString().split("T")[0]);
+  const [savingAllExam, setSavingAllExam] = useState(false);
 
-    setCoach("");
-    setNote("");
+  const allFilteredExamSelected =
+    filteredStudents.length > 0 &&
+    filteredStudents.every((student) => student.thiCap);
 
-    setOpen(true);
-  }
+  /* ===================================================
+     TOGGLE ONE EXAM
+  =================================================== */
 
-  /*
-   * =========================
-   * PROMOTE
-   * =========================
-   */
+  const [savingExamId, setSavingExamId] = useState<number | null>(null);
 
-  function handlePromote() {
-    if (!selectedStudent) return;
-
-    if (!newBelt) {
-      alert("Vui lòng chọn cấp đai mới.");
+  async function handleToggleExam(student: ExamStudent) {
+    if (!canEdit || !club?.id) {
       return;
     }
 
-    const currentIndex = beltOrder.indexOf(selectedStudent.belt);
+    const nextValue = !student.thiCap;
 
-    const newIndex = beltOrder.indexOf(newBelt);
+    setSavingExamId(student.id);
 
-    if (currentIndex < 0 || newIndex !== currentIndex + 1) {
-      alert("Học viên chỉ được thăng lên cấp đai kế tiếp.");
+    try {
+      const updateData: {
+        thi_cap: boolean;
+        ket_qua_thi_cap?: ExamResult;
+      } = {
+        thi_cap: nextValue,
+      };
+
+      /*
+       * Nếu bỏ thi:
+       * xóa kết quả cũ.
+       */
+      if (!nextValue) {
+        updateData.ket_qua_thi_cap = null;
+      }
+
+      const { error } = await supabase
+        .from("students")
+        .update(updateData)
+        .eq("id", student.id)
+        .eq("club_id", club.id);
+
+      if (error) {
+        console.error("Lỗi cập nhật thi cấp:", error);
+
+        alert("Không thể cập nhật trạng thái thi cấp.");
+
+        return;
+      }
+
+      await refreshStudents();
+    } finally {
+      setSavingExamId(null);
+    }
+  }
+
+  /* ===================================================
+     CHỌN TẤT CẢ THI CẤP
+     
+     Chỉ áp dụng danh sách đang filter.
+  =================================================== */
+
+  async function handleToggleAllExam() {
+    if (!canEdit || !club?.id || filteredStudents.length === 0) {
       return;
     }
 
-    const record = {
-      id: Date.now(),
-      studentId: selectedStudent.id,
-      studentName: selectedStudent.name,
-      fromBelt: selectedStudent.belt,
-      toBelt: newBelt,
-      date: promotionDate,
-      coach: coach.trim(),
-      note: note.trim(),
-    };
+    const nextValue = !allFilteredExamSelected;
 
-    promoteStudent(record);
+    const studentIds = filteredStudents.map((student) => student.id);
 
-    updateStudent({
-      ...selectedStudent,
-      belt: newBelt,
+    setSavingAllExam(true);
+
+    try {
+      const updateData: {
+        thi_cap: boolean;
+        ket_qua_thi_cap?: ExamResult;
+      } = {
+        thi_cap: nextValue,
+      };
+
+      /*
+       * Bỏ chọn tất cả:
+       * xóa luôn kết quả.
+       */
+      if (!nextValue) {
+        updateData.ket_qua_thi_cap = null;
+      }
+
+      const { error } = await supabase
+        .from("students")
+        .update(updateData)
+        .eq("club_id", club.id)
+        .in("id", studentIds);
+
+      if (error) {
+        console.error("Lỗi chọn tất cả thi cấp:", error);
+
+        alert("Không thể cập nhật danh sách thi cấp.");
+
+        return;
+      }
+
+      await refreshStudents();
+    } finally {
+      setSavingAllExam(false);
+    }
+  }
+
+  /* ===================================================
+     SET RESULT
+  =================================================== */
+
+  async function handleSetResult(student: ExamStudent, result: ExamResult) {
+    if (!canEdit || !club?.id || !student.thiCap) {
+      return;
+    }
+
+    setSavingExamId(student.id);
+
+    try {
+      const { error } = await supabase
+        .from("students")
+        .update({
+          ket_qua_thi_cap: result,
+        })
+        .eq("id", student.id)
+        .eq("club_id", club.id);
+
+      if (error) {
+        console.error("Lỗi cập nhật kết quả thi:", error);
+
+        alert("Không thể cập nhật kết quả.");
+
+        return;
+      }
+
+      await refreshStudents();
+    } finally {
+      setSavingExamId(null);
+    }
+  }
+
+  /* ===================================================
+     CHỌN TẤT CẢ ĐẠT
+     
+     CHỈ những người đang THI CẤP
+     trong danh sách đang filter.
+  =================================================== */
+
+  const [savingAllPassed, setSavingAllPassed] = useState(false);
+
+  async function handleSelectAllPassed() {
+    if (!canEdit || !club?.id) {
+      return;
+    }
+
+    const targetStudents = filteredStudents.filter((student) => student.thiCap);
+
+    if (targetStudents.length === 0) {
+      alert("Không có học viên nào đang thi cấp trong danh sách.");
+
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Bạn có chắc muốn chọn "Đạt" cho ${targetStudents.length} học viên đang thi cấp?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setSavingAllPassed(true);
+
+    try {
+      const studentIds = targetStudents.map((student) => student.id);
+
+      const { error } = await supabase
+        .from("students")
+        .update({
+          ket_qua_thi_cap: "Đạt",
+        })
+        .eq("club_id", club.id)
+        .in("id", studentIds);
+
+      if (error) {
+        console.error("Lỗi chọn tất cả đạt:", error);
+
+        alert("Không thể chọn tất cả đạt.");
+
+        return;
+      }
+
+      await refreshStudents();
+    } finally {
+      setSavingAllPassed(false);
+    }
+  }
+
+  /* ===================================================
+     EXPORT
+  =================================================== */
+
+  function handleExportExamList() {
+    const list = examStudents
+      .filter((student) => student.thiCap)
+      .sort((a, b) => getBeltLevel(b.belt) - getBeltLevel(a.belt));
+
+    if (list.length === 0) {
+      alert("Chưa có học viên nào đăng ký thi cấp.");
+
+      return;
+    }
+
+    const header = [
+      "STT",
+      "Họ và tên",
+      "SĐT",
+      "Ngày sinh",
+      "Lớp học",
+      "Cấp đai hiện tại",
+      "Cấp đai dự kiến",
+      "Thi cấp",
+      "Kết quả",
+    ];
+
+    const rows = list.map((student, index) => {
+      return [
+        index + 1,
+        student.name,
+        student.phone,
+        student.birthDate,
+        student.className,
+        student.belt,
+        getNextBelt(student.belt) ?? "Đen",
+        "Thi cấp",
+        student.ketQuaThiCap ?? "",
+      ];
     });
 
-    setOpen(false);
+    const csv = [
+      header.map(escapeCsv).join(","),
+      ...rows.map((row) => row.map(escapeCsv).join(",")),
+    ].join("\n");
 
-    alert(`Đã thăng đai cho ${selectedStudent.name} lên đai ${newBelt}.`);
+    const blob = new Blob(["\uFEFF" + csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "danh-sach-thi-cap.csv";
+
+    document.body.appendChild(link);
+
+    link.click();
+
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
   }
 
-  /*
-   * =========================
-   * HISTORY
-   * =========================
-   */
+  /* ===================================================
+     PROMOTION DIALOG
+  =================================================== */
 
-  function handleOpenHistory(studentId: number) {
-    setSelectedStudentId(studentId);
-    setHistoryOpen(true);
+  const [promotionStudent, setPromotionStudent] = useState<ExamStudent | null>(
+    null,
+  );
+
+  const [promotionOpen, setPromotionOpen] = useState(false);
+
+  const [promotionLoading, setPromotionLoading] = useState(false);
+
+  function openPromotionDialog(student: ExamStudent) {
+    if (!canEdit) {
+      return;
+    }
+
+    if (!student.thiCap || student.ketQuaThiCap !== "Đạt") {
+      alert("Chỉ học viên thi cấp và có kết quả Đạt mới được thăng đai.");
+
+      return;
+    }
+
+    const nextBelt = getNextBelt(student.belt);
+
+    if (!nextBelt) {
+      alert("Học viên này đã đạt đai Đen.");
+
+      return;
+    }
+
+    setPromotionStudent(student);
+
+    setPromotionOpen(true);
   }
 
-  const history = selectedStudent
-    ? getStudentBeltHistory(selectedStudent.id)
-    : [];
+  /* ===================================================
+     PROMOTE ONE
+  =================================================== */
 
-  /*
-   * =========================
-   * RENDER
-   * =========================
-   */
+  async function handlePromoteOne() {
+    if (!promotionStudent || !club?.id || !canEdit) {
+      return;
+    }
+
+    const nextBelt = getNextBelt(promotionStudent.belt);
+
+    if (!nextBelt) {
+      return;
+    }
+
+    setPromotionLoading(true);
+
+    try {
+      /*
+       * 1. Lưu lịch sử cấp đai
+       */
+      const result = await promoteStudent({
+        id: 0,
+        studentId: promotionStudent.id,
+        studentName: promotionStudent.name,
+        fromBelt: promotionStudent.belt,
+        toBelt: nextBelt,
+        date: getTodayDatabaseDate(),
+        coach: "",
+        note: "Thăng đai sau kỳ thi cấp",
+      });
+
+      if (result.error) {
+        alert(result.error);
+
+        return;
+      }
+
+      /*
+       * 2. Cập nhật học viên
+       */
+      const { error } = await supabase
+        .from("students")
+        .update({
+          belt: nextBelt,
+
+          /*
+           * Reset kỳ thi
+           */
+          thi_cap: false,
+          ket_qua_thi_cap: null,
+        })
+        .eq("id", promotionStudent.id)
+        .eq("club_id", club.id);
+
+      if (error) {
+        console.error("Lỗi cập nhật cấp đai:", error);
+
+        alert("Đã lưu lịch sử nhưng chưa cập nhật cấp đai học viên.");
+
+        return;
+      }
+
+      setPromotionOpen(false);
+
+      setPromotionStudent(null);
+
+      await refreshStudents();
+    } finally {
+      setPromotionLoading(false);
+    }
+  }
+
+  /* ===================================================
+     PROMOTE ALL PASSED
+  =================================================== */
+
+  const [promotingAll, setPromotingAll] = useState(false);
+
+  async function handlePromoteAllPassed() {
+    if (!canEdit || !club?.id) {
+      return;
+    }
+
+    const passedStudents = examStudents.filter(
+      (student) =>
+        student.thiCap &&
+        student.ketQuaThiCap === "Đạt" &&
+        getNextBelt(student.belt),
+    );
+
+    if (passedStudents.length === 0) {
+      alert("Chưa có học viên nào đạt và đủ điều kiện thăng đai.");
+
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Bạn có chắc muốn thăng đai cho ${passedStudents.length} học viên đạt?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPromotingAll(true);
+
+    try {
+      /*
+       * Chuẩn bị lịch sử
+       */
+      const records = passedStudents
+        .map((student) => {
+          const nextBelt = getNextBelt(student.belt);
+
+          if (!nextBelt) {
+            return null;
+          }
+
+          return {
+            id: 0,
+            studentId: student.id,
+            studentName: student.name,
+            fromBelt: student.belt,
+            toBelt: nextBelt,
+            date: getTodayDatabaseDate(),
+            coach: "",
+            note: "Thăng đai sau kỳ thi cấp",
+          };
+        })
+        .filter((record) => record !== null);
+
+      /*
+       * 1. Lưu lịch sử cấp đai
+       */
+      const historyResult = await promoteStudents(records);
+
+      if (historyResult.error) {
+        alert(historyResult.error);
+
+        return;
+      }
+
+      /*
+       * 2. Cập nhật tất cả học viên
+       *
+       * Không dùng một update chung vì
+       * mỗi người có cấp đai tiếp theo khác nhau.
+       */
+      for (const student of passedStudents) {
+        const nextBelt = getNextBelt(student.belt);
+
+        if (!nextBelt) {
+          continue;
+        }
+
+        const { error } = await supabase
+          .from("students")
+          .update({
+            belt: nextBelt,
+
+            /*
+             * Reset kỳ thi
+             */
+            thi_cap: false,
+            ket_qua_thi_cap: null,
+          })
+          .eq("id", student.id)
+          .eq("club_id", club.id);
+
+        if (error) {
+          console.error(`Lỗi cập nhật ${student.name}:`, error);
+        }
+      }
+
+      await refreshStudents();
+    } finally {
+      setPromotingAll(false);
+    }
+  }
+
+  /* ===================================================
+     HISTORY
+  =================================================== */
+
+  const recentHistory = useMemo(() => {
+    return beltRecords.slice(0, 10);
+  }, [beltRecords]);
+
+  /* ===================================================
+     RENDER
+  =================================================== */
 
   return (
-    <div className="space-y-6">
-      {/* =========================
-          HERO
-      ========================= */}
+    <div className="min-h-screen bg-slate-50 p-4 md:p-6 lg:p-8">
+      <div className="mx-auto max-w-[1600px] space-y-6">
+        {/* =================================================
+            HEADER
+        ================================================= */}
 
-      <div className="relative overflow-hidden rounded-2xl bg-slate-950 p-6 text-white shadow-sm md:p-8">
-        <div className="relative z-10">
-          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-medium text-slate-200">
-                <Award className="h-3.5 w-3.5" />
-                Quản lý cấp đai
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm">
+                <Award className="h-5 w-5" />
               </div>
 
-              <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-                Cấp đai
-              </h1>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                  Cấp đai
+                </h1>
 
-              <p className="mt-2 max-w-2xl text-sm text-slate-300 md:text-base">
-                Quản lý cấp đai, thăng đai và lịch sử phát triển của học viên.
-              </p>
+                <p className="text-sm text-slate-500">
+                  Quản lý thi cấp và thăng cấp đai
+                </p>
+              </div>
             </div>
+          </div>
 
-            <div className="hidden h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/10 md:flex">
-              <Award className="h-10 w-10" />
-            </div>
+          <div className="flex flex-wrap gap-2">
+            {/* CHỌN TẤT CẢ THI CẤP */}
+
+            {canEdit && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={filteredStudents.length === 0 || savingAllExam}
+                onClick={handleToggleAllExam}
+                className={
+                  allFilteredExamSelected
+                    ? "border-slate-300 text-slate-700 hover:bg-slate-100"
+                    : "border-blue-200 text-blue-700 hover:bg-blue-50"
+                }
+              >
+                {savingAllExam ? (
+                  <>
+                    <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+                    Đang lưu...
+                  </>
+                ) : allFilteredExamSelected ? (
+                  <>
+                    <X className="mr-2 h-4 w-4" />
+                    Bỏ chọn tất cả
+                  </>
+                ) : (
+                  <>
+                    <Check className="mr-2 h-4 w-4" />
+                    Chọn tất cả thi cấp
+                  </>
+                )}
+              </Button>
+            )}
+
+            {/* CHỌN TẤT CẢ ĐẠT */}
+
+            {canEdit && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={totalExam === 0 || savingAllPassed || promotingAll}
+                onClick={handleSelectAllPassed}
+                className="border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50"
+              >
+                {savingAllPassed ? (
+                  <>
+                    <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-emerald-300 border-t-emerald-700" />
+                    Đang lưu...
+                  </>
+                ) : (
+                  <>
+                    <Check className="mr-2 h-4 w-4" />
+                    Chọn tất cả đạt
+                  </>
+                )}
+              </Button>
+            )}
+
+            {/* THĂNG TẤT CẢ */}
+
+            {canEdit && (
+              <Button
+                type="button"
+                disabled={totalPassed === 0 || promotingAll}
+                onClick={handlePromoteAllPassed}
+                className="bg-slate-900 text-white hover:bg-slate-800"
+              >
+                {promotingAll ? (
+                  <>
+                    <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-white" />
+                    Đang thăng đai...
+                  </>
+                ) : (
+                  <>
+                    <GraduationCap className="mr-2 h-4 w-4" />
+                    Thăng đai tất cả đạt
+                    {totalPassed > 0 && ` (${totalPassed})`}
+                  </>
+                )}
+              </Button>
+            )}
+
+            {/* EXPORT */}
+
+            <Button
+              type="button"
+              variant="outline"
+              disabled={totalExam === 0}
+              onClick={handleExportExamList}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Xuất danh sách thi
+            </Button>
           </div>
         </div>
 
-        <div className="absolute -right-12 -top-16 h-48 w-48 rounded-full bg-white/5" />
+        {/* =================================================
+            STAFF NOTICE
+        ================================================= */}
 
-        <div className="absolute -bottom-24 right-32 h-48 w-48 rounded-full bg-white/5" />
-      </div>
-
-      {/* =========================
-          STATS
-      ========================= */}
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-2xl border bg-card p-5 shadow-sm">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">Tổng học viên</p>
-
-              <p className="mt-2 text-3xl font-bold text-slate-900">
-                {stats.total}
-              </p>
-
-              <p className="mt-1 text-xs text-muted-foreground">
-                Tất cả cấp đai
-              </p>
-            </div>
-
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100">
-              <Users className="h-5 w-5 text-slate-600" />
-            </div>
+        {isStaff && (
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+            Bạn đang ở chế độ <b>Chỉ xem</b>.
           </div>
+        )}
+
+        {/* =================================================
+            STATS
+        ================================================= */}
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* TOTAL */}
+
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-slate-500">Tổng học viên</p>
+
+                  <p className="mt-1 text-2xl font-bold text-slate-900">
+                    {totalStudents}
+                  </p>
+                </div>
+
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100">
+                  <Users className="h-5 w-5 text-slate-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* EXAM */}
+
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-slate-500">Thi cấp</p>
+
+                  <p className="mt-1 text-2xl font-bold text-blue-700">
+                    {totalExam}
+                  </p>
+                </div>
+
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50">
+                  <GraduationCap className="h-5 w-5 text-blue-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* PASSED */}
+
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-slate-500">Đạt</p>
+
+                  <p className="mt-1 text-2xl font-bold text-emerald-600">
+                    {totalPassed}
+                  </p>
+                </div>
+
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50">
+                  <Check className="h-5 w-5 text-emerald-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* FAILED */}
+
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-slate-500">Không đạt</p>
+
+                  <p className="mt-1 text-2xl font-bold text-red-600">
+                    {totalFailed}
+                  </p>
+                </div>
+
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50">
+                  <X className="h-5 w-5 text-red-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="rounded-2xl border bg-card p-5 shadow-sm">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">Đai trắng</p>
+        {/* =================================================
+            FILTER
+        ================================================= */}
 
-              <p className="mt-2 text-3xl font-bold text-slate-700">
-                {stats.white}
-              </p>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+              {/* SEARCH */}
 
-              <p className="mt-1 text-xs text-muted-foreground">3 cấp đầu</p>
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Tìm học viên, số điện thoại, lớp..."
+                  className="pl-9"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {/* BELT */}
+
+                <Select
+                  value={beltFilter}
+                  onValueChange={(value) => setBeltFilter(value ?? "all")}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Cấp đai" />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả cấp đai</SelectItem>
+
+                    {BELT_NAMES.map((belt) => (
+                      <SelectItem key={belt} value={belt}>
+                        {belt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* EXAM FILTER */}
+
+                <Select
+                  value={examFilter}
+                  onValueChange={(value) => setExamFilter(value ?? "all")}
+                >
+                  <SelectTrigger className="w-[170px]">
+                    <SelectValue placeholder="Thi cấp" />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả</SelectItem>
+
+                    <SelectItem value="exam">Đang thi cấp</SelectItem>
+
+                    <SelectItem value="not-exam">Không thi</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* SORT */}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+                  }
+                >
+                  {sortOrder === "asc" ? (
+                    <>
+                      <ChevronUp className="mr-2 h-4 w-4" />
+                      Đai thấp → cao
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="mr-2 h-4 w-4" />
+                      Đai cao → thấp
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
+          </CardContent>
+        </Card>
 
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100">
-              <ShieldCheck className="h-5 w-5 text-slate-500" />
+        {/* =================================================
+            TABLE
+        ================================================= */}
+
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle>Danh sách học viên</CardTitle>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Hiển thị {filteredStudents.length} / {totalStudents} học viên
+                </p>
+              </div>
+
+              {totalExam > 0 && (
+                <Badge
+                  variant="outline"
+                  className="w-fit border-blue-200 bg-blue-50 text-blue-700"
+                >
+                  {totalExam} người thi cấp
+                </Badge>
+              )}
             </div>
-          </div>
-        </div>
+          </CardHeader>
 
-        <div className="rounded-2xl border bg-card p-5 shadow-sm">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">Đai màu</p>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[60px]">STT</TableHead>
 
-              <p className="mt-2 text-3xl font-bold text-blue-600">
-                {stats.color}
-              </p>
+                    <TableHead>Học viên</TableHead>
 
-              <p className="mt-1 text-xs text-muted-foreground">
-                Từ vàng đến đỏ cấp 1
-              </p>
-            </div>
+                    <TableHead>Lớp</TableHead>
 
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
-              <Award className="h-5 w-5 text-blue-600" />
-            </div>
-          </div>
-        </div>
+                    <TableHead>Cấp đai</TableHead>
 
-        <div className="rounded-2xl border bg-card p-5 shadow-sm">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">Đai đen</p>
+                    <TableHead className="text-center">Thi cấp</TableHead>
 
-              <p className="mt-2 text-3xl font-bold text-slate-900">
-                {stats.black}
-              </p>
+                    <TableHead className="text-center">Kết quả</TableHead>
 
-              <p className="mt-1 text-xs text-muted-foreground">
-                Đã hoàn thành hệ thống đai
-              </p>
-            </div>
+                    <TableHead className="text-center">Cấp dự kiến</TableHead>
 
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900">
-              <Award className="h-5 w-5 text-white" />
-            </div>
-          </div>
-        </div>
-      </div>
+                    <TableHead className="text-right">Thao tác</TableHead>
+                  </TableRow>
+                </TableHeader>
 
-      {/* =========================
-          FILTER
-      ========================= */}
-
-      <div className="rounded-2xl border bg-card p-5 shadow-sm">
-        <div className="mb-4">
-          <h2 className="font-semibold text-slate-900">Tìm kiếm & bộ lọc</h2>
-
-          <p className="mt-1 text-xs text-muted-foreground">
-            Tìm học viên theo tên, số điện thoại hoặc cấp đai.
-          </p>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-[1fr_220px]">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm học viên hoặc số điện thoại..."
-              className="h-11 pl-9"
-            />
-          </div>
-
-          <Select
-            value={beltFilter}
-            onValueChange={(value) => setBeltFilter(value ?? "all")}
-          >
-            <SelectTrigger className="h-11">
-              <SelectValue placeholder="Lọc cấp đai" />
-            </SelectTrigger>
-
-            <SelectContent>
-              <SelectItem value="all">Tất cả cấp đai</SelectItem>
-
-              {BELT_NAMES.map((belt) => (
-                <SelectItem key={belt} value={belt}>
-                  Đai {belt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* =========================
-          TABLE HEADER
-      ========================= */}
-
-      <div className="flex flex-col gap-3 rounded-2xl border bg-card p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="font-semibold text-slate-900">Danh sách cấp đai</h2>
-
-          <p className="mt-1 text-sm text-muted-foreground">
-            Hiển thị {filteredStudents.length} / {students.length} học viên
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <History className="h-4 w-4" />
-          {beltRecords.length} lần thăng đai
-        </div>
-      </div>
-
-      {/* =========================
-          TABLE
-      ========================= */}
-
-      <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-slate-50 hover:bg-slate-50">
-                <TableHead className="w-[60px]">STT</TableHead>
-
-                <TableHead className="min-w-[230px]">Học viên</TableHead>
-
-                <TableHead className="min-w-[160px]">Lớp học</TableHead>
-
-                <TableHead className="min-w-[170px]">
-                  Cấp đai hiện tại
-                </TableHead>
-
-                <TableHead className="min-w-[160px]">Trạng thái</TableHead>
-
-                <TableHead className="min-w-[210px] text-right">
-                  Thao tác
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-
-            <TableBody>
-              {filteredStudents.length > 0 ? (
-                filteredStudents.map((student, index) => {
-                  const currentIndex = beltOrder.indexOf(student.belt);
-
-                  const isBlackBelt = student.belt === "Đen";
-
-                  const nextBelt =
-                    currentIndex >= 0 && currentIndex < beltOrder.length - 1
-                      ? beltOrder[currentIndex + 1]
-                      : "";
-
-                  return (
-                    <TableRow key={student.id} className="hover:bg-slate-50/70">
-                      {/* STT */}
-
-                      <TableCell className="font-medium text-muted-foreground">
-                        {index + 1}
-                      </TableCell>
-
-                      {/* STUDENT */}
-
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">
-                            {getInitials(student.name)}
-                          </div>
-
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold text-slate-900">
-                              {student.name}
-                            </p>
-
-                            <p className="truncate text-xs text-muted-foreground">
-                              {student.phone}
-                            </p>
-                          </div>
-                        </div>
-                      </TableCell>
-
-                      {/* CLASS */}
-
-                      <TableCell>
-                        <span className="text-sm font-medium text-slate-700">
-                          {student.className || "Chưa xếp lớp"}
-                        </span>
-                      </TableCell>
-
-                      {/* BELT */}
-
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="h-4 w-4 rounded-full border shadow-sm"
-                            style={{
-                              backgroundColor: getBeltColor(student.belt),
-                            }}
-                          />
-
-                          <Badge
-                            variant="outline"
-                            className={getBeltClass(student.belt)}
-                          >
-                            {student.belt}
-                          </Badge>
-                        </div>
-                      </TableCell>
-
-                      {/* STATUS */}
-
-                      <TableCell>
-                        {isBlackBelt ? (
-                          <Badge className="gap-1.5 bg-slate-900 text-white hover:bg-slate-900">
-                            <Check className="h-3 w-3" />
-                            Hoàn thành
-                          </Badge>
-                        ) : (
-                          <div className="space-y-1">
-                            <Badge
-                              variant="outline"
-                              className="border-blue-200 bg-blue-50 text-blue-700"
-                            >
-                              Có thể thăng đai
-                            </Badge>
-
-                            {nextBelt && (
-                              <p className="text-xs text-muted-foreground">
-                                Tiếp theo: <strong>{nextBelt}</strong>
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </TableCell>
-
-                      {/* ACTION */}
-
-                      <TableCell>
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleOpenHistory(student.id)}
-                          >
-                            <Eye className="mr-1.5 h-4 w-4" />
-                            Lịch sử
-                          </Button>
-
-                          {!isBlackBelt && !isStaff && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleOpenPromotion(student.id)}
-                            >
-                              <ShieldCheck className="mr-1.5 h-4 w-4" />
-                              Thăng đai
-                            </Button>
-                          )}
-                        </div>
+                <TableBody>
+                  {filteredStudents.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={8}
+                        className="h-32 text-center text-slate-500"
+                      >
+                        Không có học viên phù hợp.
                       </TableCell>
                     </TableRow>
-                  );
-                })
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-40 text-center">
-                    <div className="flex flex-col items-center justify-center">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100">
-                        <Award className="h-6 w-6 text-slate-400" />
-                      </div>
+                  ) : (
+                    filteredStudents.map((student, index) => {
+                      const nextBelt = getNextBelt(student.belt);
 
-                      <p className="mt-3 font-medium text-slate-700">
-                        Không tìm thấy học viên
-                      </p>
+                      const isSaving = savingExamId === student.id;
 
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Thử thay đổi từ khóa hoặc bộ lọc.
-                      </p>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                      const isPassed =
+                        student.thiCap && student.ketQuaThiCap === "Đạt";
 
-        <div className="flex flex-col gap-2 border-t px-5 py-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <span>
-            Hiển thị{" "}
-            <strong className="text-slate-900">
-              {filteredStudents.length}
-            </strong>{" "}
-            / {students.length} học viên
-          </span>
+                      return (
+                        <TableRow
+                          key={student.id}
+                          className={student.thiCap ? "bg-blue-50/40" : ""}
+                        >
+                          {/* STT */}
 
-          <span>
-            Tổng lần thăng đai:{" "}
-            <strong className="text-slate-900">{beltRecords.length}</strong>
-          </span>
-        </div>
+                          <TableCell className="font-medium text-slate-500">
+                            {index + 1}
+                          </TableCell>
+
+                          {/* STUDENT */}
+
+                          <TableCell>
+                            <div>
+                              <p className="font-semibold text-slate-900">
+                                {student.name}
+                              </p>
+
+                              {student.phone && (
+                                <p className="text-xs text-slate-500">
+                                  {student.phone}
+                                </p>
+                              )}
+                            </div>
+                          </TableCell>
+
+                          {/* CLASS */}
+
+                          <TableCell>
+                            <span className="text-sm text-slate-600">
+                              {student.className || "—"}
+                            </span>
+                          </TableCell>
+
+                          {/* BELT */}
+
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className="border-slate-200 bg-white"
+                            >
+                              {student.belt}
+                            </Badge>
+                          </TableCell>
+
+                          {/* EXAM */}
+
+                          <TableCell className="text-center">
+                            <button
+                              type="button"
+                              disabled={!canEdit || isSaving}
+                              onClick={() => handleToggleExam(student)}
+                              className={`
+                                  group inline-flex h-9 min-w-[112px]
+                                  items-center justify-center gap-2
+                                  rounded-full border px-3.5
+                                  text-xs font-semibold
+                                  transition-all duration-200
+                                  focus:outline-none
+                                  focus:ring-2
+                                  focus:ring-blue-200
+                                  disabled:cursor-not-allowed
+                                  disabled:opacity-60
+                                  ${
+                                    student.thiCap
+                                      ? "border-blue-200 bg-blue-50 text-blue-700 shadow-sm hover:border-blue-300 hover:bg-blue-100"
+                                      : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700"
+                                  }
+                                `}
+                            >
+                              {isSaving ? (
+                                <>
+                                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+                                  Đang lưu
+                                </>
+                              ) : student.thiCap ? (
+                                <>
+                                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white">
+                                    <Check className="h-3 w-3 stroke-[3]" />
+                                  </span>
+                                  Thi cấp
+                                </>
+                              ) : (
+                                <>
+                                  <span className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white">
+                                    <X className="h-3 w-3 text-slate-400" />
+                                  </span>
+                                  Không thi
+                                </>
+                              )}
+                            </button>
+                          </TableCell>
+
+                          {/* RESULT */}
+
+                          <TableCell className="text-center">
+                            {!student.thiCap ? (
+                              <span className="text-sm text-slate-400">—</span>
+                            ) : (
+                              <div className="flex items-center justify-center gap-1.5">
+                                {/* ĐẠT */}
+
+                                <button
+                                  type="button"
+                                  disabled={!canEdit || isSaving}
+                                  onClick={() =>
+                                    handleSetResult(student, "Đạt")
+                                  }
+                                  className={`
+                                      inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold transition
+                                      disabled:cursor-not-allowed disabled:opacity-50
+                                      ${
+                                        student.ketQuaThiCap === "Đạt"
+                                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                          : "border-slate-200 bg-white text-slate-400 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                                      }
+                                    `}
+                                >
+                                  <Check className="mr-1 h-3.5 w-3.5" />
+                                  Đạt
+                                </button>
+
+                                {/* KHÔNG ĐẠT */}
+
+                                <button
+                                  type="button"
+                                  disabled={!canEdit || isSaving}
+                                  onClick={() =>
+                                    handleSetResult(student, "Không đạt")
+                                  }
+                                  className={`
+                                      inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold transition
+                                      disabled:cursor-not-allowed disabled:opacity-50
+                                      ${
+                                        student.ketQuaThiCap === "Không đạt"
+                                          ? "border-red-200 bg-red-50 text-red-700"
+                                          : "border-slate-200 bg-white text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+                                      }
+                                    `}
+                                >
+                                  <X className="mr-1 h-3.5 w-3.5" />
+                                  Không đạt
+                                </button>
+                              </div>
+                            )}
+                          </TableCell>
+
+                          {/* NEXT BELT */}
+
+                          <TableCell className="text-center">
+                            {isPassed && nextBelt ? (
+                              <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+                                {nextBelt}
+                              </Badge>
+                            ) : (
+                              <span className="text-sm text-slate-400">—</span>
+                            )}
+                          </TableCell>
+
+                          {/* ACTION */}
+
+                          <TableCell className="text-right">
+                            {isPassed && nextBelt && canEdit ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => openPromotionDialog(student)}
+                                className="bg-slate-900 text-white hover:bg-slate-800"
+                              >
+                                <GraduationCap className="mr-1.5 h-4 w-4" />
+                                Thăng đai
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-slate-400">—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* =================================================
+            LỊCH SỬ CẤP ĐAI GẦN ĐÂY
+        ================================================= */}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Lịch sử cấp đai gần đây</CardTitle>
+          </CardHeader>
+
+          <CardContent className="p-0">
+            {recentHistory.length === 0 ? (
+              <div className="p-6 text-center text-sm text-slate-500">
+                Chưa có lịch sử cấp đai.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Học viên</TableHead>
+
+                      <TableHead>Từ đai</TableHead>
+
+                      <TableHead>Sang đai</TableHead>
+
+                      <TableHead>Ngày</TableHead>
+
+                      <TableHead>Ghi chú</TableHead>
+                    </TableRow>
+                  </TableHeader>
+
+                  <TableBody>
+                    {recentHistory.map((record) => (
+                      <TableRow key={record.id}>
+                        <TableCell className="font-medium">
+                          {record.studentName}
+                        </TableCell>
+
+                        <TableCell>{record.fromBelt}</TableCell>
+
+                        <TableCell>
+                          <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+                            {record.toBelt}
+                          </Badge>
+                        </TableCell>
+
+                        <TableCell>{record.date}</TableCell>
+
+                        <TableCell className="text-slate-500">
+                          {record.note || "—"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
-      {/* =========================
+      {/* ===================================================
           PROMOTION DIALOG
-      ========================= */}
+      =================================================== */}
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
+      <Dialog open={promotionOpen} onOpenChange={setPromotionOpen}>
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Xác nhận thăng đai</DialogTitle>
 
             <DialogDescription>
-              Cập nhật cấp đai mới và lưu lại lịch sử thăng đai.
+              Xác nhận nâng cấp đai cho học viên.
             </DialogDescription>
           </DialogHeader>
 
-          {selectedStudent && (
-            <div className="space-y-5">
-              {/* STUDENT */}
-
-              <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">
-                  {getInitials(selectedStudent.name)}
-                </div>
-
-                <div>
-                  <p className="font-semibold text-slate-900">
-                    {selectedStudent.name}
-                  </p>
-
-                  <p className="text-sm text-muted-foreground">
-                    {selectedStudent.phone}
-                  </p>
-                </div>
-              </div>
-
-              {/* BELT FLOW */}
-
-              <div className="rounded-2xl border bg-white p-4">
-                <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Cấp đai
+          {promotionStudent && (
+            <div className="space-y-4 py-3">
+              <div className="rounded-xl border bg-slate-50 p-5">
+                <p className="text-center text-lg font-bold text-slate-900">
+                  {promotionStudent.name}
                 </p>
 
-                <div className="flex items-center justify-center gap-3">
-                  <Badge
-                    variant="outline"
-                    className={getBeltClass(selectedStudent.belt)}
-                  >
-                    Đai {selectedStudent.belt}
+                <div className="mt-5 flex items-center justify-center gap-4">
+                  <Badge variant="outline" className="px-3 py-1">
+                    {promotionStudent.belt}
                   </Badge>
 
-                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                  <span className="text-xl text-slate-400">→</span>
 
-                  <Badge variant="outline" className={getBeltClass(newBelt)}>
-                    Đai {newBelt}
+                  <Badge className="bg-emerald-600 px-3 py-1 text-white hover:bg-emerald-600">
+                    {getNextBelt(promotionStudent.belt)}
                   </Badge>
                 </div>
               </div>
 
-              {/* DATE */}
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                <div className="flex items-start gap-2">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0" />
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Ngày thăng đai</label>
-
-                <div className="relative">
-                  <CalendarDays className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-
-                  <Input
-                    type="date"
-                    value={promotionDate}
-                    onChange={(e) => setPromotionDate(e.target.value)}
-                    className="pl-9"
-                  />
+                  <p>
+                    Kết quả thi:
+                    <b> Đạt</b>. Sau khi thăng đai, hệ thống sẽ tự động chuyển
+                    thành <b>Không thi</b> và xóa kết quả.
+                  </p>
                 </div>
-              </div>
-
-              {/* COACH */}
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">HLV xác nhận</label>
-
-                <div className="relative">
-                  <UserRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-
-                  <Input
-                    value={coach}
-                    onChange={(e) => setCoach(e.target.value)}
-                    placeholder="Nhập tên HLV..."
-                    className="pl-9"
-                  />
-                </div>
-              </div>
-
-              {/* NOTE */}
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Ghi chú</label>
-
-                <Input
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="Ví dụ: Đạt yêu cầu kỳ kiểm tra..."
-                />
               </div>
             </div>
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={promotionLoading}
+              onClick={() => setPromotionOpen(false)}
+            >
               Hủy
             </Button>
 
-            <Button onClick={handlePromote}>
-              <Check className="mr-2 h-4 w-4" />
-              Xác nhận thăng đai
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* =========================
-          HISTORY DIALOG
-      ========================= */}
-
-      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Lịch sử cấp đai</DialogTitle>
-
-            <DialogDescription>
-              Quá trình thay đổi cấp đai của học viên.
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedStudent && (
-            <div className="space-y-5">
-              {/* PROFILE */}
-
-              <div className="flex items-center gap-4 rounded-2xl bg-slate-50 p-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">
-                  {getInitials(selectedStudent.name)}
-                </div>
-
-                <div>
-                  <p className="font-semibold text-slate-900">
-                    {selectedStudent.name}
-                  </p>
-
-                  <div className="mt-1 flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">
-                      Hiện tại:
-                    </span>
-
-                    <Badge
-                      variant="outline"
-                      className={getBeltClass(selectedStudent.belt)}
-                    >
-                      {selectedStudent.belt}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-
-              {/* HISTORY */}
-
-              {history.length === 0 ? (
-                <div className="rounded-2xl border border-dashed p-10 text-center">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100">
-                    <History className="h-6 w-6 text-slate-400" />
-                  </div>
-
-                  <p className="mt-3 font-medium text-slate-700">
-                    Chưa có lịch sử thăng đai
-                  </p>
-
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Học viên chưa có lần thăng đai nào được ghi nhận.
-                  </p>
-                </div>
+            <Button
+              type="button"
+              disabled={promotionLoading}
+              onClick={handlePromoteOne}
+              className="bg-slate-900 text-white hover:bg-slate-800"
+            >
+              {promotionLoading ? (
+                <>
+                  <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-white" />
+                  Đang xử lý...
+                </>
               ) : (
-                <div className="space-y-3">
-                  {history.map((record, index) => (
-                    <div
-                      key={record.id}
-                      className="relative rounded-2xl border bg-white p-4"
-                    >
-                      <div className="flex gap-4">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100">
-                          <Award className="h-5 w-5 text-slate-600" />
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge
-                                variant="outline"
-                                className={getBeltClass(record.fromBelt)}
-                              >
-                                {record.fromBelt}
-                              </Badge>
-
-                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-
-                              <Badge
-                                variant="outline"
-                                className={getBeltClass(record.toBelt)}
-                              >
-                                {record.toBelt}
-                              </Badge>
-                            </div>
-
-                            <span className="text-xs text-muted-foreground">
-                              {formatDate(record.date)}
-                            </span>
-                          </div>
-
-                          {record.coach && (
-                            <p className="mt-3 text-sm">
-                              <span className="text-muted-foreground">
-                                HLV xác nhận:
-                              </span>{" "}
-                              <strong>{record.coach}</strong>
-                            </p>
-                          )}
-
-                          {record.note && (
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {record.note}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {index < history.length - 1 && (
-                        <div className="absolute left-[34px] top-[58px] h-5 w-px bg-slate-200" />
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <GraduationCap className="mr-2 h-4 w-4" />
+                  Xác nhận thăng đai
+                </>
               )}
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setHistoryOpen(false)}>
-              Đóng
             </Button>
           </DialogFooter>
         </DialogContent>

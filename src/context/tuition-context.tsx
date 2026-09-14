@@ -44,6 +44,10 @@ type TuitionRow = {
 
 const TuitionContext = createContext<TuitionContextType | undefined>(undefined);
 
+// ==========================================
+// DATE HELPERS
+// ==========================================
+
 function formatDateForDisplay(date: string | null) {
   if (!date) return "";
 
@@ -70,6 +74,10 @@ function formatDateForDatabase(date: string) {
   return date;
 }
 
+// ==========================================
+// MAP DATABASE → APP
+// ==========================================
+
 function mapTuition(row: TuitionRow): TuitionRecord {
   return {
     studentId: row.student_id,
@@ -82,13 +90,17 @@ function mapTuition(row: TuitionRow): TuitionRecord {
   };
 }
 
+// ==========================================
+// PROVIDER
+// ==========================================
+
 export function TuitionProvider({ children }: { children: React.ReactNode }) {
   const { club, loading: clubLoading } = useClub();
 
   const [tuitionData, setTuitionData] = useState<TuitionRecord[]>([]);
 
   // ==========================================
-  // Tải học phí của CLB hiện tại
+  // TẢI HỌC PHÍ CỦA CLB HIỆN TẠI
   // ==========================================
 
   const loadTuition = useCallback(async () => {
@@ -110,7 +122,7 @@ export function TuitionProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    setTuitionData((data as TuitionRow[]).map(mapTuition));
+    setTuitionData(((data ?? []) as TuitionRow[]).map(mapTuition));
   }, [club?.id]);
 
   useEffect(() => {
@@ -120,7 +132,7 @@ export function TuitionProvider({ children }: { children: React.ReactNode }) {
   }, [clubLoading, loadTuition]);
 
   // ==========================================
-  // Lấy học phí
+  // LẤY HỌC PHÍ CỦA 1 HỌC VIÊN
   // ==========================================
 
   const getTuition = useCallback(
@@ -133,7 +145,7 @@ export function TuitionProvider({ children }: { children: React.ReactNode }) {
   );
 
   // ==========================================
-  // Lưu học phí
+  // LƯU / TẠO / CẬP NHẬT HỌC PHÍ
   // ==========================================
 
   const saveTuition = useCallback(
@@ -145,24 +157,26 @@ export function TuitionProvider({ children }: { children: React.ReactNode }) {
 
       const supabase = createClient();
 
+      const tuitionPayload = {
+        club_id: club.id,
+        student_id: record.studentId,
+        month: record.month,
+        amount: record.amount,
+        due_date: formatDateForDatabase(record.dueDate),
+        paid_date: formatDateForDatabase(record.paidDate),
+        status: record.status,
+        note: record.note,
+        updated_at: new Date().toISOString(),
+      };
+
       const { data, error } = await supabase
         .from("tuition")
-        .upsert(
-          {
-            club_id: club.id,
-            student_id: record.studentId,
-            month: record.month,
-            amount: record.amount,
-            due_date: formatDateForDatabase(record.dueDate),
-            paid_date: formatDateForDatabase(record.paidDate),
-            status: record.status,
-            note: record.note,
-            updated_at: new Date().toISOString(),
-          },
-          {
-            onConflict: "student_id,month",
-          },
-        )
+        .upsert(tuitionPayload, {
+          // QUAN TRỌNG:
+          // Học phí được xác định theo:
+          // CLB + học viên + tháng
+          onConflict: "club_id,student_id,month",
+        })
         .select()
         .single();
 
@@ -172,6 +186,10 @@ export function TuitionProvider({ children }: { children: React.ReactNode }) {
       }
 
       const savedRecord = mapTuition(data as TuitionRow);
+
+      // ==========================================
+      // CẬP NHẬT STATE LOCAL
+      // ==========================================
 
       setTuitionData((prev) => {
         const exists = prev.some(
@@ -196,7 +214,7 @@ export function TuitionProvider({ children }: { children: React.ReactNode }) {
   );
 
   // ==========================================
-  // Lấy toàn bộ học phí theo tháng
+  // LẤY TOÀN BỘ HỌC PHÍ THEO THÁNG
   // ==========================================
 
   const getAllTuition = useCallback(
@@ -205,6 +223,10 @@ export function TuitionProvider({ children }: { children: React.ReactNode }) {
     },
     [tuitionData],
   );
+
+  // ==========================================
+  // PROVIDER
+  // ==========================================
 
   return (
     <TuitionContext.Provider
@@ -218,6 +240,10 @@ export function TuitionProvider({ children }: { children: React.ReactNode }) {
     </TuitionContext.Provider>
   );
 }
+
+// ==========================================
+// HOOK
+// ==========================================
 
 export function useTuition() {
   const context = useContext(TuitionContext);

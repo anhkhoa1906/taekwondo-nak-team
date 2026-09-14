@@ -11,6 +11,8 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useClub } from "@/context/club-context";
 
+export type ExamResult = "Đạt" | "Không đạt" | null;
+
 export type Student = {
   id: number;
   name: string;
@@ -24,6 +26,11 @@ export type Student = {
   joinDate: string;
   note: string;
   avatarUrl: string;
+
+  // Thi cấp
+  // Optional để không phá các form Student hiện tại.
+  thiCap?: boolean;
+  ketQuaThiCap?: ExamResult;
 };
 
 type StudentContextType = {
@@ -42,6 +49,7 @@ type StudentContextType = {
 type StudentRow = {
   id: number;
   club_id: string;
+
   name: string;
   phone: string | null;
   birth_date: string | null;
@@ -53,6 +61,12 @@ type StudentRow = {
   join_date: string | null;
   note: string | null;
   avatar_url: string | null;
+
+  // ================================
+  // THI CẤP
+  // ================================
+  thi_cap: boolean | null;
+  ket_qua_thi_cap: string | null;
 };
 
 // =====================================================
@@ -90,6 +104,11 @@ function formatDateForDatabase(date: string) {
 // =====================================================
 
 function mapStudent(row: StudentRow): Student {
+  const ketQua =
+    row.ket_qua_thi_cap === "Đạt" || row.ket_qua_thi_cap === "Không đạt"
+      ? row.ket_qua_thi_cap
+      : null;
+
   return {
     id: row.id,
     name: row.name,
@@ -103,6 +122,12 @@ function mapStudent(row: StudentRow): Student {
     joinDate: formatDateForDisplay(row.join_date),
     note: row.note ?? "",
     avatarUrl: row.avatar_url ?? "",
+
+    // ================================
+    // THI CẤP
+    // ================================
+    thiCap: Boolean(row.thi_cap),
+    ketQuaThiCap: ketQua,
   };
 }
 
@@ -216,17 +241,28 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
         .from("students")
         .insert({
           club_id: club.id,
+
           name: student.name,
           phone: student.phone,
+
           birth_date: formatDateForDatabase(student.birthDate),
+
           gender: student.gender,
           class_name: student.className,
           belt: student.belt,
           status: student.status,
           address: student.address,
+
           join_date: formatDateForDatabase(student.joinDate),
+
           note: student.note,
           avatar_url: student.avatarUrl || null,
+
+          // ================================
+          // THI CẤP MẶC ĐỊNH
+          // ================================
+          thi_cap: false,
+          ket_qua_thi_cap: null,
         })
         .select()
         .single();
@@ -256,20 +292,43 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
 
       const supabase = createClient();
 
+      /*
+       * QUAN TRỌNG:
+       *
+       * Không update thi_cap / ket_qua_thi_cap
+       * ở đây.
+       *
+       * Vì form chỉnh sửa học viên không được phép
+       * vô tình reset trạng thái thi cấp.
+       *
+       * Ví dụ:
+       *
+       * Thi cấp = Có
+       * Kết quả = Đạt
+       *
+       * Sau đó sửa số điện thoại học viên
+       * => trạng thái thi cấp vẫn phải giữ nguyên.
+       */
+
       const { data, error } = await supabase
         .from("students")
         .update({
           name: student.name,
           phone: student.phone,
+
           birth_date: formatDateForDatabase(student.birthDate),
+
           gender: student.gender,
           class_name: student.className,
           belt: student.belt,
           status: student.status,
           address: student.address,
+
           join_date: formatDateForDatabase(student.joinDate),
+
           note: student.note,
           avatar_url: student.avatarUrl || null,
+
           updated_at: new Date().toISOString(),
         })
         .eq("id", student.id)
@@ -317,7 +376,10 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Xóa avatar khỏi Storage nếu có
+      // =================================================
+      // XÓA AVATAR STORAGE
+      // =================================================
+
       if (student?.avatarUrl) {
         const marker = "/student-avatars/";
 
@@ -354,9 +416,11 @@ export function StudentProvider({ children }: { children: React.ReactNode }) {
       value={{
         students,
         loading,
+
         addStudent,
         updateStudent,
         deleteStudent,
+
         refreshStudents: loadStudents,
       }}
     >
