@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { StudentProvider } from "@/context/student-context";
@@ -27,6 +27,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "NAK TAEKWONDO SYSTEM",
   description: "Hệ thống quản lý câu lạc bộ Taekwondo",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0b1220",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
