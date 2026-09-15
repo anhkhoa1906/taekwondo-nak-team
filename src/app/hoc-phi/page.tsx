@@ -171,12 +171,14 @@ export default function HocPhiPage() {
   const { getTuition, saveTuition } = useTuition();
 
   const currentMonth = getCurrentMonth();
+
   const previousMonths = useMemo(() => getPreviousMonths(24), []);
 
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [statusFilter, setStatusFilter] = useState("all");
   const [classFilter, setClassFilter] = useState("all");
   const [search, setSearch] = useState("");
+
   const [expandedOverdueStudents, setExpandedOverdueStudents] = useState<
     number[]
   >([]);
@@ -208,11 +210,10 @@ export default function HocPhiPage() {
   /**
    * HỌC VIÊN TRỄ HẠN THÁNG CŨ
    *
-   * Quét 24 tháng trước tháng hiện tại và chỉ lấy các khoản chưa đóng.
+   * Staff vẫn được xem danh sách này.
+   * Tuy nhiên UI bên dưới sẽ ẩn tiền và thao tác thanh toán.
    */
   const overdueItems = useMemo<OverdueItem[]>(() => {
-    if (isStaff) return [];
-
     const items: OverdueItem[] = [];
 
     students
@@ -244,7 +245,7 @@ export default function HocPhiPage() {
 
       return a.studentName.localeCompare(b.studentName, "vi");
     });
-  }, [students, previousMonths, getTuition, isStaff]);
+  }, [students, previousMonths, getTuition]);
 
   const overdueStudentCount = useMemo(
     () => new Set(overdueItems.map((item) => item.studentId)).size,
@@ -291,17 +292,6 @@ export default function HocPhiPage() {
     );
   };
 
-  /**
-   * Trạng thái hiển thị:
-   *
-   * Có record:
-   *   -> lấy status trong database.
-   *
-   * Không có record:
-   *   -> tháng cũ: Quá hạn
-   *   -> tháng hiện tại: Chưa lập
-   *   -> tháng tương lai: Chưa lập
-   */
   function getDisplayStatus(studentId: number): DisplayStatus {
     const record = getTuition(studentId, selectedMonth);
 
@@ -316,16 +306,6 @@ export default function HocPhiPage() {
     return "Chưa lập";
   }
 
-  /**
-   * Lấy số tiền hiển thị.
-   *
-   * Có record:
-   *   -> lấy số tiền trong database.
-   *
-   * Chưa có record:
-   *   -> tháng cũ / hiện tại: mặc định 300.000đ.
-   *   -> tháng tương lai: chưa có học phí.
-   */
   function getDisplayAmount(studentId: number) {
     const record = getTuition(studentId, selectedMonth);
 
@@ -340,13 +320,6 @@ export default function HocPhiPage() {
     return 0;
   }
 
-  /**
-   * Lập học phí.
-   *
-   * Dùng cho tháng hiện tại hoặc tháng tương lai.
-   * Sau khi lập:
-   *   Chưa lập -> Chưa đóng
-   */
   async function handleCreateTuition(studentId: number) {
     if (isStaff) return;
 
@@ -365,20 +338,6 @@ export default function HocPhiPage() {
     });
   }
 
-  /**
-   * Xác nhận ĐÃ ĐÓNG.
-   *
-   * Không có record:
-   *   -> tự lập và đóng luôn.
-   *
-   * Có record:
-   *   -> cập nhật thành Đã đóng.
-   *
-   * Cho phép:
-   *   - đóng tháng cũ
-   *   - đóng tháng hiện tại
-   *   - đóng trước tháng tương lai
-   */
   async function handleMarkAsPaid(studentId: number) {
     if (isStaff) return;
 
@@ -397,15 +356,6 @@ export default function HocPhiPage() {
     });
   }
 
-  /**
-   * Hủy đóng.
-   *
-   * Tháng cũ:
-   *   -> Quá hạn
-   *
-   * Tháng hiện tại / tương lai:
-   *   -> Chưa đóng
-   */
   async function handleMarkAsUnpaid(studentId: number) {
     if (isStaff) return;
 
@@ -442,22 +392,6 @@ export default function HocPhiPage() {
     });
   }
 
-  /**
-   * THỐNG KÊ
-   *
-   * Chưa có record:
-   *
-   *   Tháng cũ:
-   *      -> tính Quá hạn
-   *
-   *   Tháng hiện tại:
-   *      -> Chưa lập
-   *      -> chưa tính vào phải thu
-   *
-   *   Tháng tương lai:
-   *      -> Chưa lập
-   *      -> chưa tính vào phải thu
-   */
   const stats = useMemo(() => {
     let totalAmount = 0;
     let paidAmount = 0;
@@ -474,7 +408,6 @@ export default function HocPhiPage() {
       .forEach((student) => {
         const record = getTuition(student.id, selectedMonth);
 
-        // Tháng hiện tại / tương lai chưa lập
         if (!record && !isPastMonth) {
           notCreatedCount += 1;
           return;
@@ -526,10 +459,6 @@ export default function HocPhiPage() {
     getTuition,
   ]);
 
-  const notCreatedCount = tuitionStudents.filter(
-    (student) => getDisplayStatus(student.id) === "Chưa lập",
-  ).length;
-
   return (
     <div className="min-h-full bg-slate-50/40 p-6">
       {/* ==========================================
@@ -554,8 +483,6 @@ export default function HocPhiPage() {
             </div>
           </div>
         </div>
-
-        {/* CHỌN THÁNG */}
 
         <div className="flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 shadow-sm">
           <CalendarDays className="h-5 w-5 text-slate-500" />
@@ -701,174 +628,229 @@ export default function HocPhiPage() {
           TRỄ HẠN THÁNG CŨ
       ========================================== */}
 
-      {!isStaff && (
-        <section className="mb-6 overflow-hidden rounded-2xl border border-red-100 bg-white shadow-sm">
-          <div className="border-b border-red-100 bg-gradient-to-r from-red-50 via-white to-white px-5 py-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
-                  <Clock3 className="h-5 w-5" />
+      <section className="mb-6 overflow-hidden rounded-2xl border border-red-100 bg-white shadow-sm">
+        <div className="border-b border-red-100 bg-gradient-to-r from-red-50 via-white to-white px-5 py-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
+                <Clock3 className="h-5 w-5" />
+              </div>
+
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="font-semibold text-slate-900">
+                    Học viên trễ hạn tháng cũ
+                  </h2>
+
+                  <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
+                    {overdueStudentCount} học viên
+                  </span>
                 </div>
 
+                <p className="mt-1 text-sm text-slate-500">
+                  Các khoản học phí của những tháng trước chưa được thanh toán.
+                </p>
+              </div>
+            </div>
+
+            {/* STAFF KHÔNG XEM TIỀN */}
+            {isStaff ? (
+              <div className="flex items-center gap-2 rounded-xl border border-red-100 bg-white px-4 py-3">
+                <Users className="h-4 w-4 text-red-500" />
+
                 <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-semibold text-slate-900">
-                      Học viên trễ hạn tháng cũ
-                    </h2>
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                    Cần nhắc học phí
+                  </p>
 
-                    <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
-                      {overdueStudentCount} học viên
-                    </span>
-                  </div>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    Các khoản học phí của những tháng trước chưa được thanh
-                    toán.
+                  <p className="text-base font-bold text-red-600">
+                    {overdueItems.length} khoản
                   </p>
                 </div>
               </div>
-
+            ) : (
               <div className="flex items-center gap-2 rounded-xl border border-red-100 bg-white px-4 py-3">
                 <Wallet className="h-4 w-4 text-red-500" />
+
                 <div>
                   <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
                     Tổng còn nợ
                   </p>
+
                   <p className="text-base font-bold text-red-600">
                     {formatMoney(overdueTotal)}
                   </p>
                 </div>
               </div>
-            </div>
+            )}
           </div>
+        </div>
 
-          {overdueStudents.length === 0 ? (
-            <div className="flex min-h-[150px] flex-col items-center justify-center px-6 text-center">
-              <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-green-50">
-                <CheckCircle2 className="h-5 w-5 text-green-600" />
-              </div>
-
-              <p className="font-medium text-slate-700">
-                Không có học viên trễ hạn
-              </p>
-
-              <p className="mt-1 text-sm text-slate-400">
-                Tất cả học phí của các tháng cũ đã được thanh toán.
-              </p>
+        {overdueStudents.length === 0 ? (
+          <div className="flex min-h-[150px] flex-col items-center justify-center px-6 text-center">
+            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-green-50">
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
             </div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {overdueStudents.map((student) => {
-                const isExpanded = expandedOverdueStudents.includes(
-                  student.studentId,
-                );
 
-                return (
-                  <div key={student.studentId} className="group">
-                    <div
-                      className={`flex flex-col gap-4 px-5 py-4 transition sm:flex-row sm:items-center ${
-                        isExpanded ? "bg-slate-50/80" : "hover:bg-slate-50/70"
-                      }`}
-                    >
-                      <div className="flex min-w-0 flex-1 items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600">
-                          {student.studentName.trim().charAt(0).toUpperCase()}
-                        </div>
+            <p className="font-medium text-slate-700">
+              Không có học viên trễ hạn
+            </p>
 
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-semibold text-slate-800">
-                              {student.studentName}
-                            </p>
+            <p className="mt-1 text-sm text-slate-400">
+              Tất cả học phí của các tháng cũ đã được thanh toán.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {overdueStudents.map((student) => {
+              const isExpanded = expandedOverdueStudents.includes(
+                student.studentId,
+              );
 
-                            <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">
-                              {student.items.length} tháng
-                            </span>
-                          </div>
-
-                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
-                            <span>{student.phone}</span>
-                            <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:block" />
-                            <span>{student.className}</span>
-                          </div>
-                        </div>
+              return (
+                <div key={student.studentId} className="group">
+                  <div
+                    className={`flex flex-col gap-4 px-5 py-4 transition sm:flex-row sm:items-center ${
+                      isExpanded ? "bg-slate-50/80" : "hover:bg-slate-50/70"
+                    }`}
+                  >
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600">
+                        {student.studentName.trim().charAt(0).toUpperCase()}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2 sm:max-w-[390px]">
-                        {student.items.slice(0, 3).map((item) => (
-                          <span
-                            key={`${item.studentId}-${item.month}`}
-                            className="rounded-lg border border-red-100 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700"
-                          >
-                            {getMonthLabel(item.month)}
-                          </span>
-                        ))}
-
-                        {student.items.length > 3 && (
-                          <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-500">
-                            +{student.items.length - 3}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between gap-4 sm:min-w-[220px] sm:justify-end">
-                        <div className="text-left sm:text-right">
-                          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                            Tổng nợ
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-slate-800">
+                            {student.studentName}
                           </p>
-                          <p className="font-bold text-red-600">
-                            {formatMoney(student.total)}
-                          </p>
+
+                          <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">
+                            {student.items.length} tháng
+                          </span>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            toggleOverdueStudent(student.studentId)
-                          }
-                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-                        >
-                          {isExpanded ? "Thu gọn" : "Chi tiết"}
-                          <ChevronDown
-                            className={`h-3.5 w-3.5 transition-transform ${
-                              isExpanded ? "rotate-180" : ""
-                            }`}
-                          />
-                        </button>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                          <span>{student.phone}</span>
+
+                          <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:block" />
+
+                          <span>{student.className}</span>
+                        </div>
                       </div>
                     </div>
 
-                    {isExpanded && (
-                      <div className="border-t border-slate-100 bg-slate-50/50 px-5 py-3">
-                        <div className="overflow-x-auto">
-                          <table className="w-full min-w-[650px] text-sm">
-                            <thead>
-                              <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                                <th className="px-3 py-2">Tháng nợ</th>
+                    <div className="flex flex-wrap items-center gap-2 sm:max-w-[390px]">
+                      {student.items.slice(0, 3).map((item) => (
+                        <span
+                          key={`${item.studentId}-${item.month}`}
+                          className="rounded-lg border border-red-100 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700"
+                        >
+                          {getMonthLabel(item.month)}
+                        </span>
+                      ))}
+
+                      {student.items.length > 3 && (
+                        <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-500">
+                          +{student.items.length - 3}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4 sm:min-w-[220px] sm:justify-end">
+                      {/* STAFF KHÔNG XEM TỔNG NỢ */}
+                      <div className="text-left sm:text-right">
+                        {isStaff ? (
+                          <>
+                            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                              Cần xử lý
+                            </p>
+
+                            <p className="font-bold text-red-600">
+                              {student.items.length} tháng
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                              Tổng nợ
+                            </p>
+
+                            <p className="font-bold text-red-600">
+                              {formatMoney(student.total)}
+                            </p>
+                          </>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => toggleOverdueStudent(student.studentId)}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                      >
+                        {isExpanded ? "Thu gọn" : "Chi tiết"}
+
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 transition-transform ${
+                            isExpanded ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="border-t border-slate-100 bg-slate-50/50 px-5 py-3">
+                      {isStaff && (
+                        <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                          Staff chỉ xem thông tin để nhắc học phí. Số tiền và
+                          thao tác thanh toán được ẩn.
+                        </div>
+                      )}
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[500px] text-sm">
+                          <thead>
+                            <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                              <th className="px-3 py-2">Tháng nợ</th>
+
+                              {/* ADMIN / COACH */}
+                              {!isStaff && (
                                 <th className="px-3 py-2">Số tiền</th>
-                                <th className="px-3 py-2">Hạn đóng</th>
+                              )}
+
+                              <th className="px-3 py-2">Hạn đóng</th>
+
+                              {/* ADMIN / COACH */}
+                              {!isStaff && (
                                 <th className="px-3 py-2 text-right">Xử lý</th>
-                              </tr>
-                            </thead>
+                              )}
+                            </tr>
+                          </thead>
 
-                            <tbody className="divide-y divide-slate-200/70">
-                              {student.items.map((item) => (
-                                <tr
-                                  key={`${item.studentId}-${item.month}`}
-                                  className="transition hover:bg-white"
-                                >
-                                  <td className="px-3 py-3 font-medium text-slate-700">
-                                    {getMonthLabel(item.month)}
-                                  </td>
+                          <tbody className="divide-y divide-slate-200/70">
+                            {student.items.map((item) => (
+                              <tr
+                                key={`${item.studentId}-${item.month}`}
+                                className="transition hover:bg-white"
+                              >
+                                <td className="px-3 py-3 font-medium text-slate-700">
+                                  {getMonthLabel(item.month)}
+                                </td>
 
+                                {/* ADMIN / COACH */}
+                                {!isStaff && (
                                   <td className="px-3 py-3 font-semibold text-slate-800">
                                     {formatMoney(item.amount)}
                                   </td>
+                                )}
 
-                                  <td className="px-3 py-3 text-slate-500">
-                                    {formatDate(item.dueDate)}
-                                  </td>
+                                <td className="px-3 py-3 text-slate-500">
+                                  {formatDate(item.dueDate)}
+                                </td>
 
+                                {/* ADMIN / COACH */}
+                                {!isStaff && (
                                   <td className="px-3 py-3">
                                     <div className="flex justify-end">
                                       <button
@@ -881,20 +863,20 @@ export default function HocPhiPage() {
                                       </button>
                                     </div>
                                   </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {/* ==========================================
           FILTER
@@ -910,8 +892,6 @@ export default function HocPhiPage() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[1fr_220px_220px]">
-          {/* SEARCH */}
-
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-600">
               Tìm học viên
@@ -928,8 +908,6 @@ export default function HocPhiPage() {
               />
             </div>
           </div>
-
-          {/* CLASS */}
 
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-600">
@@ -950,8 +928,6 @@ export default function HocPhiPage() {
               ))}
             </select>
           </div>
-
-          {/* STATUS */}
 
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-600">
@@ -1045,11 +1021,7 @@ export default function HocPhiPage() {
                       key={student.id}
                       className="transition hover:bg-slate-50/70"
                     >
-                      {/* STT */}
-
                       <td className="px-4 py-4 text-slate-400">{index + 1}</td>
-
-                      {/* HỌC VIÊN */}
 
                       <td className="px-4 py-4">
                         <div className="font-medium text-slate-800">
@@ -1061,15 +1033,11 @@ export default function HocPhiPage() {
                         </div>
                       </td>
 
-                      {/* LỚP */}
-
                       <td className="px-4 py-4">
                         <span className="inline-flex rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
                           {student.className}
                         </span>
                       </td>
-
-                      {/* HỌC PHÍ */}
 
                       <td className="px-4 py-4">
                         {isStaff ? (
@@ -1079,23 +1047,15 @@ export default function HocPhiPage() {
                         )}
                       </td>
 
-                      {/* HẠN ĐÓNG */}
-
                       <td className="px-4 py-4 text-slate-500">
                         {formatDate(dueDate)}
                       </td>
-
-                      {/* NGÀY ĐÓNG */}
 
                       <td className="px-4 py-4 text-slate-500">
                         {formatDate(paidDate)}
                       </td>
 
-                      {/* TRẠNG THÁI */}
-
                       <td className="px-4 py-4">{getStatusBadge(status)}</td>
-
-                      {/* THAO TÁC */}
 
                       <td className="px-4 py-4">
                         <div className="flex justify-end">
