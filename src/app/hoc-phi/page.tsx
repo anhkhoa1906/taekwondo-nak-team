@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   CalendarDays,
+  ChevronDown,
   CheckCircle2,
   Clock3,
   CreditCard,
@@ -23,6 +24,25 @@ const DEFAULT_TUITION = 300000;
 
 type DisplayStatus = TuitionStatus | "Chưa lập";
 
+type OverdueItem = {
+  studentId: number;
+  studentName: string;
+  phone: string;
+  className: string;
+  month: string;
+  amount: number;
+  dueDate: string;
+};
+
+type OverdueStudent = {
+  studentId: number;
+  studentName: string;
+  phone: string;
+  className: string;
+  items: OverdueItem[];
+  total: number;
+};
+
 function formatMoney(amount: number) {
   return new Intl.NumberFormat("vi-VN").format(amount) + " đ";
 }
@@ -39,6 +59,21 @@ function formatDate(date: string) {
 
 function getCurrentMonth() {
   return new Date().toISOString().slice(0, 7);
+}
+
+function getPreviousMonths(count = 24) {
+  const result: string[] = [];
+  const now = new Date();
+
+  for (let index = 1; index <= count; index += 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - index, 1);
+
+    result.push(
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+    );
+  }
+
+  return result;
 }
 
 function getToday() {
@@ -136,11 +171,15 @@ export default function HocPhiPage() {
   const { getTuition, saveTuition } = useTuition();
 
   const currentMonth = getCurrentMonth();
+  const previousMonths = useMemo(() => getPreviousMonths(24), []);
 
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [statusFilter, setStatusFilter] = useState("all");
   const [classFilter, setClassFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [expandedOverdueStudents, setExpandedOverdueStudents] = useState<
+    number[]
+  >([]);
 
   const isFutureMonth = selectedMonth > currentMonth;
   const isPastMonth = selectedMonth < currentMonth;
@@ -165,6 +204,92 @@ export default function HocPhiPage() {
         );
       });
   }, [students, classFilter, search]);
+
+  /**
+   * HỌC VIÊN TRỄ HẠN THÁNG CŨ
+   *
+   * Quét 24 tháng trước tháng hiện tại và chỉ lấy các khoản chưa đóng.
+   */
+  const overdueItems = useMemo<OverdueItem[]>(() => {
+    if (isStaff) return [];
+
+    const items: OverdueItem[] = [];
+
+    students
+      .filter((student) => student.className !== "Chưa xếp lớp")
+      .forEach((student) => {
+        previousMonths.forEach((month) => {
+          const record = getTuition(student.id, month);
+
+          if (!record || record.status === "Đã đóng") {
+            return;
+          }
+
+          items.push({
+            studentId: student.id,
+            studentName: student.name,
+            phone: student.phone,
+            className: student.className,
+            month,
+            amount: Number(record.amount || DEFAULT_TUITION),
+            dueDate: record.dueDate || getDueDate(month),
+          });
+        });
+      });
+
+    return items.sort((a, b) => {
+      if (a.month !== b.month) {
+        return b.month.localeCompare(a.month);
+      }
+
+      return a.studentName.localeCompare(b.studentName, "vi");
+    });
+  }, [students, previousMonths, getTuition, isStaff]);
+
+  const overdueStudentCount = useMemo(
+    () => new Set(overdueItems.map((item) => item.studentId)).size,
+    [overdueItems],
+  );
+
+  const overdueTotal = useMemo(
+    () => overdueItems.reduce((sum, item) => sum + item.amount, 0),
+    [overdueItems],
+  );
+
+  const overdueStudents = useMemo<OverdueStudent[]>(() => {
+    const map = new Map<number, OverdueStudent>();
+
+    overdueItems.forEach((item) => {
+      const existing = map.get(item.studentId);
+
+      if (existing) {
+        existing.items.push(item);
+        existing.total += item.amount;
+        return;
+      }
+
+      map.set(item.studentId, {
+        studentId: item.studentId,
+        studentName: item.studentName,
+        phone: item.phone,
+        className: item.className,
+        items: [item],
+        total: item.amount,
+      });
+    });
+
+    return Array.from(map.values()).sort((a, b) =>
+      a.studentName.localeCompare(b.studentName, "vi"),
+    );
+  }, [overdueItems]);
+
+  const toggleOverdueStudent = (studentId: number) => {
+    setExpandedOverdueStudents((current) =>
+      current.includes(studentId)
+        ? current.filter((id) => id !== studentId)
+        : [...current, studentId],
+    );
+  };
 
   /**
    * Trạng thái hiển thị:
@@ -295,6 +420,24 @@ export default function HocPhiPage() {
       dueDate: current.dueDate || getDueDate(selectedMonth),
       paidDate: "",
       status: isPastMonth ? "Quá hạn" : "Chưa đóng",
+      note: current.note || "",
+    });
+  }
+
+  async function handlePayOverdue(item: OverdueItem) {
+    if (isStaff) return;
+
+    const current = getTuition(item.studentId, item.month);
+
+    if (!current || current.status === "Đã đóng") return;
+
+    await saveTuition({
+      studentId: item.studentId,
+      month: item.month,
+      amount: Number(current.amount || item.amount || DEFAULT_TUITION),
+      dueDate: current.dueDate || item.dueDate,
+      paidDate: getToday(),
+      status: "Đã đóng",
       note: current.note || "",
     });
   }
@@ -553,6 +696,205 @@ export default function HocPhiPage() {
           iconClassName="bg-red-50"
         />
       </div>
+
+      {/* ==========================================
+          TRỄ HẠN THÁNG CŨ
+      ========================================== */}
+
+      {!isStaff && (
+        <section className="mb-6 overflow-hidden rounded-2xl border border-red-100 bg-white shadow-sm">
+          <div className="border-b border-red-100 bg-gradient-to-r from-red-50 via-white to-white px-5 py-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
+                  <Clock3 className="h-5 w-5" />
+                </div>
+
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-semibold text-slate-900">
+                      Học viên trễ hạn tháng cũ
+                    </h2>
+
+                    <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
+                      {overdueStudentCount} học viên
+                    </span>
+                  </div>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Các khoản học phí của những tháng trước chưa được thanh
+                    toán.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 rounded-xl border border-red-100 bg-white px-4 py-3">
+                <Wallet className="h-4 w-4 text-red-500" />
+                <div>
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                    Tổng còn nợ
+                  </p>
+                  <p className="text-base font-bold text-red-600">
+                    {formatMoney(overdueTotal)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {overdueStudents.length === 0 ? (
+            <div className="flex min-h-[150px] flex-col items-center justify-center px-6 text-center">
+              <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-green-50">
+                <CheckCircle2 className="h-5 w-5 text-green-600" />
+              </div>
+
+              <p className="font-medium text-slate-700">
+                Không có học viên trễ hạn
+              </p>
+
+              <p className="mt-1 text-sm text-slate-400">
+                Tất cả học phí của các tháng cũ đã được thanh toán.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {overdueStudents.map((student) => {
+                const isExpanded = expandedOverdueStudents.includes(
+                  student.studentId,
+                );
+
+                return (
+                  <div key={student.studentId} className="group">
+                    <div
+                      className={`flex flex-col gap-4 px-5 py-4 transition sm:flex-row sm:items-center ${
+                        isExpanded ? "bg-slate-50/80" : "hover:bg-slate-50/70"
+                      }`}
+                    >
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600">
+                          {student.studentName.trim().charAt(0).toUpperCase()}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-slate-800">
+                              {student.studentName}
+                            </p>
+
+                            <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">
+                              {student.items.length} tháng
+                            </span>
+                          </div>
+
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                            <span>{student.phone}</span>
+                            <span className="hidden h-1 w-1 rounded-full bg-slate-300 sm:block" />
+                            <span>{student.className}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 sm:max-w-[390px]">
+                        {student.items.slice(0, 3).map((item) => (
+                          <span
+                            key={`${item.studentId}-${item.month}`}
+                            className="rounded-lg border border-red-100 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700"
+                          >
+                            {getMonthLabel(item.month)}
+                          </span>
+                        ))}
+
+                        {student.items.length > 3 && (
+                          <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-500">
+                            +{student.items.length - 3}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-4 sm:min-w-[220px] sm:justify-end">
+                        <div className="text-left sm:text-right">
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                            Tổng nợ
+                          </p>
+                          <p className="font-bold text-red-600">
+                            {formatMoney(student.total)}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            toggleOverdueStudent(student.studentId)
+                          }
+                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                        >
+                          {isExpanded ? "Thu gọn" : "Chi tiết"}
+                          <ChevronDown
+                            className={`h-3.5 w-3.5 transition-transform ${
+                              isExpanded ? "rotate-180" : ""
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="border-t border-slate-100 bg-slate-50/50 px-5 py-3">
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[650px] text-sm">
+                            <thead>
+                              <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                <th className="px-3 py-2">Tháng nợ</th>
+                                <th className="px-3 py-2">Số tiền</th>
+                                <th className="px-3 py-2">Hạn đóng</th>
+                                <th className="px-3 py-2 text-right">Xử lý</th>
+                              </tr>
+                            </thead>
+
+                            <tbody className="divide-y divide-slate-200/70">
+                              {student.items.map((item) => (
+                                <tr
+                                  key={`${item.studentId}-${item.month}`}
+                                  className="transition hover:bg-white"
+                                >
+                                  <td className="px-3 py-3 font-medium text-slate-700">
+                                    {getMonthLabel(item.month)}
+                                  </td>
+
+                                  <td className="px-3 py-3 font-semibold text-slate-800">
+                                    {formatMoney(item.amount)}
+                                  </td>
+
+                                  <td className="px-3 py-3 text-slate-500">
+                                    {formatDate(item.dueDate)}
+                                  </td>
+
+                                  <td className="px-3 py-3">
+                                    <div className="flex justify-end">
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePayOverdue(item)}
+                                        className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-slate-700"
+                                      >
+                                        <CheckCircle2 className="h-3.5 w-3.5" />
+                                        Đã đóng
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ==========================================
           FILTER
